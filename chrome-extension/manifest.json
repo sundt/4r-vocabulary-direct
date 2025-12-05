@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "4R Vocabulary Direct",
+  "version": "1.0.0",
+  "description": "Learn vocabulary in context with definitions, synonyms, and real-world examples",
+  "permissions": [
+    "contextMenus",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://*.dictionaryapi.dev/*",
+    "*://*.youdao.com/*",
+    "*://*.merriam-webster.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

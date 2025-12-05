@@ -1,0 +1,7 @@
+{
+  "name": "4R Vocabulary Direct",
+  "description": "A 4R-based (Reading, Rephrase, Retrieval, Recitation) vocabulary acquisition system that connects English directly to concepts and images, bypassing translation.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
