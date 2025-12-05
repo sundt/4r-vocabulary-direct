@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LinguaContext - Saved Words</title>
+  <title>4R Vocabulary - 生词本</title>
   <style>
     * {
       margin: 0;
@@ -12,142 +12,124 @@
     }
     
     body {
-      width: 400px;
-      min-height: 300px;
+      width: 320px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      padding: 16px;
+      padding: 20px;
     }
     
     .container {
       background: white;
       border-radius: 12px;
-      padding: 20px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+      padding: 24px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      text-align: center;
     }
     
     h1 {
-      font-size: 20px;
+      font-size: 22px;
       color: #1e293b;
+      margin-bottom: 20px;
+    }
+    
+    .icon {
+      font-size: 64px;
       margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
     }
     
     .stats {
-      background: #f1f5f9;
-      padding: 12px;
-      border-radius: 8px;
-      margin-bottom: 16px;
-      font-size: 14px;
-      color: #475569;
-    }
-    
-    .word-list {
-      max-height: 400px;
-      overflow-y: auto;
-    }
-    
-    .word-item {
-      padding: 12px;
-      border-bottom: 1px solid #e2e8f0;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    
-    .word-item:hover {
       background: #f8fafc;
+      padding: 16px;
+      border-radius: 10px;
+      margin-bottom: 20px;
     }
     
-    .word-item:last-child {
-      border-bottom: none;
-    }
-    
-    .word-name {
-      font-size: 16px;
-      font-weight: 600;
-      color: #1e293b;
-      margin-bottom: 4px;
-    }
-    
-    .word-def {
-      font-size: 13px;
-      color: #64748b;
-      font-style: italic;
-    }
-    
-    .empty-state {
-      text-align: center;
-      padding: 40px 20px;
-      color: #94a3b8;
-    }
-    
-    .empty-icon {
-      font-size: 48px;
-      margin-bottom: 12px;
-    }
-    
-    .actions {
-      margin-top: 16px;
+    .stat-row {
       display: flex;
-      gap: 8px;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      font-size: 14px;
+      color: #64748b;
+    }
+    
+    .stat-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #8b5cf6;
     }
     
     .btn {
-      flex: 1;
-      padding: 10px;
+      width: 100%;
+      padding: 14px;
       border: none;
-      border-radius: 8px;
-      font-size: 13px;
+      border-radius: 10px;
+      font-size: 15px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
     
     .btn-primary {
-      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
       color: white;
+      margin-bottom: 12px;
     }
     
     .btn-primary:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
     }
     
     .btn-secondary {
-      background: #f1f5f9;
-      color: #475569;
+      background: white;
+      border: 2px solid #e2e8f0;
+      color: #64748b;
     }
     
     .btn-secondary:hover {
-      background: #e2e8f0;
+      border-color: #cbd5e1;
+      background: #f8fafc;
+    }
+    
+    .hint {
+      margin-top: 16px;
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.5;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>
-      📚 LinguaContext
-    </h1>
+    <div class="icon">📚</div>
+    <h1>4R Vocabulary</h1>
     
     <div class="stats" id="stats">
-      Loading...
-    </div>
-    
-    <div class="word-list" id="word-list">
-      <div class="empty-state">
-        <div class="empty-icon">📖</div>
-        <div>No words saved yet</div>
-        <div style="font-size: 12px; margin-top: 8px;">
-          Select any word on a webpage to get started!
-        </div>
+      <div class="stat-row">
+        <span>总计生词</span>
+        <span class="stat-value" id="total-count">0</span>
+      </div>
+      <div class="stat-row">
+        <span>已复习</span>
+        <span class="stat-value" id="reviewed-count">0</span>
       </div>
     </div>
     
-    <div class="actions">
-      <button class="btn btn-primary" id="export-btn">📤 Export</button>
-      <button class="btn btn-secondary" id="clear-btn">🗑️ Clear All</button>
+    <button class="btn btn-primary" id="open-list-btn">
+      📖 打开生词本
+    </button>
+    
+    <button class="btn btn-secondary" id="options-btn">
+      ⚙️ 扩展设置
+    </button>
+    
+    <div class="hint">
+      💡 在网页上选中单词，点击⭐即可收藏
     </div>
   </div>
   

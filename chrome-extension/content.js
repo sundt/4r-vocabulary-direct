@@ -226,12 +226,46 @@ function initializeShadowDOM() {
       }
     }
     
+    @keyframes toastFadeIn {
+      from {
+        opacity: 0;
+        transform: translateX(-5px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+    
     .hidden {
       display: none !important;
     }
     
     .popup-layer {
+      position: relative;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    
+    /* 美化滚动条 */
+    .popup-layer::-webkit-scrollbar {
+      width: 8px;
+    }
+    
+    .popup-layer::-webkit-scrollbar-track {
+      background: rgba(148, 163, 184, 0.1);
+      border-radius: 4px;
+    }
+    
+    .popup-layer::-webkit-scrollbar-thumb {
+      background: rgba(139, 92, 246, 0.3);
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+    
+    .popup-layer::-webkit-scrollbar-thumb:hover {
+      background: rgba(139, 92, 246, 0.5);
     }
     
     .close-btn {
@@ -280,11 +314,54 @@ function initializeShadowDOM() {
       transform: scale(0.95);
     }
     
+    .star-btn {
+      background: transparent;
+      border: none;
+      font-size: 22px;
+      cursor: pointer;
+      padding: 4px 8px;
+      margin-left: 8px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 6px;
+      line-height: 1;
+      filter: grayscale(1);
+      opacity: 0.4;
+    }
+    
+    .star-btn:hover {
+      filter: grayscale(0);
+      opacity: 0.7;
+      transform: scale(1.15) rotate(-10deg);
+    }
+    
+    .star-btn:active {
+      transform: scale(0.9);
+    }
+    
+    .star-btn.saved {
+      filter: grayscale(0);
+      opacity: 1;
+      animation: starPulse 0.5s ease-out;
+    }
+    
+    @keyframes starPulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.3) rotate(15deg); }
+      100% { transform: scale(1) rotate(0deg); }
+    }
+    
     .word-header {
       background: rgba(248, 250, 252, 0.5);
       padding: 12px 16px;
       border-radius: 12px;
       margin-bottom: 6px;
+      cursor: move;
+      user-select: none;
+    }
+    
+    .word-header:active {
+      cursor: grabbing;
+      background: rgba(248, 250, 252, 0.8);
     }
     
     .word-title-row {
@@ -666,33 +743,45 @@ function showToast(message, duration = 2000) {
     existingToast.remove();
   }
   
+  // Find the top popup layer (where the star button is)
+  const topLayer = shadowRoot.querySelector('.popup-layer:not(.hidden)');
+  if (!topLayer) return;
+  
+  const starBtn = topLayer.querySelector('#star-btn');
+  if (!starBtn) return;
+  
   const toast = document.createElement('div');
   toast.className = 'toast-notification';
   toast.textContent = message;
+  
+  // Get star button position
+  const starRect = starBtn.getBoundingClientRect();
+  const layerRect = topLayer.getBoundingClientRect();
+  
   toast.style.cssText = `
-    position: fixed;
-    bottom: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(15, 23, 42, 0.95);
+    position: absolute;
+    top: ${starRect.top - layerRect.top + 2}px;
+    left: ${starRect.right - layerRect.left + 4}px;
+    background: rgba(15, 23, 42, 0.9);
     color: white;
-    padding: 12px 24px;
-    border-radius: 8px;
-    font-size: 14px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
     font-weight: 500;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 100000;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    z-index: 10;
     pointer-events: none;
-    animation: slideUp 0.3s ease;
+    white-space: nowrap;
+    opacity: 0;
+    animation: toastFadeIn 0.2s ease forwards;
   `;
   
-  shadowRoot.appendChild(toast);
+  topLayer.appendChild(toast);
   
   setTimeout(() => {
     toast.style.opacity = '0';
-    toast.style.transform = 'translateX(-50%) translateY(10px)';
-    toast.style.transition = 'all 0.3s ease';
-    setTimeout(() => toast.remove(), 300);
+    toast.style.transition = 'opacity 0.2s ease';
+    setTimeout(() => toast.remove(), 200);
   }, duration);
 }
 
@@ -747,14 +836,9 @@ function renderPopupStack() {
       leftPosition = wordStack[0].x;
     }
     
-    // Ensure popup stays within viewport
+    // 计算弹窗的最大高度
     const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
-    
-    // Adjust vertical position if too close to bottom
-    if (topPosition + 400 > viewportHeight) {
-      topPosition = Math.max(10, viewportHeight - 420);
-    }
+    const maxPopupHeight = isTopLayer ? viewportHeight - 40 : 70;
     
     layer.style.cssText = `
       position: fixed;
@@ -771,6 +855,7 @@ function renderPopupStack() {
       padding: ${isTopLayer ? '20px' : '14px 20px'};
       min-width: 680px;
       max-width: 90vw;
+      max-height: ${maxPopupHeight}px;
       backdrop-filter: blur(${isTopLayer ? 0 : 10}px);
       pointer-events: auto;
       cursor: ${isTopLayer ? 'auto' : 'pointer'};
@@ -792,7 +877,7 @@ function renderPopupStack() {
       layer.innerHTML = `<div class="error">${wordInfo.error}</div>`;
     } else if (wordInfo.data) {
       if (isTopLayer) {
-        layer.innerHTML = generateFullPopupHTML(wordInfo.data);
+        layer.innerHTML = generateFullPopupHTML(wordInfo.data, wordInfo.savedWord);
       } else {
         // Old layers show compact view
         layer.innerHTML = generateCompactPopupHTML(wordInfo.data);
@@ -839,9 +924,22 @@ function generateCompactPopupHTML(data) {
 }
 
 // Generate full HTML for top layer
-function generateFullPopupHTML(data) {
+function generateFullPopupHTML(data, savedWord) {
   const { word, phonetic, phoneticUs, phoneticUk, audioUs, audioUk, definition, allDefinitions,
           partOfSpeech, synonyms, antonyms, examples, translation, baseForm, baseFormType, baseFormTranslation, youdaoTags } = data;
+  
+  // 格式化收藏日期
+  const formatDate = (isoString) => {
+    if (!isoString) return '';
+    const date = new Date(isoString);
+    return date.toLocaleString('zh-CN', { 
+      year: 'numeric', 
+      month: '2-digit', 
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
   
   let html = `
     <button class="close-btn" id="close-popup">×</button>
@@ -849,7 +947,8 @@ function generateFullPopupHTML(data) {
     <div class="word-header">
       <div class="word-title-row">
         <div class="word-title" id="word-text" style="cursor: pointer;" title="点击复制单词">${word}</div>
-        <button class="copy-btn" id="copy-word-btn" title="复制单词">📋</button>`;
+        <button class="copy-btn" id="copy-word-btn" title="复制单词">📋</button>
+        <button class="star-btn" id="star-btn" title="收藏到生词本">⭐</button>`;
   
   // Phonetics with flag icons - Vocabulary.com style
   if (phoneticUs || phoneticUk) {
@@ -972,6 +1071,32 @@ function generateFullPopupHTML(data) {
     `;
   }
   
+  // 收藏信息和复习状态
+  if (savedWord) {
+    const isReviewed = savedWord.reviewCount > 0;
+    html += `
+      <div class="section" style="padding: 12px; background: #f8fafc; border-radius: 8px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+          <div style="font-size: 12px; color: #64748b;">
+            📅 收藏时间: <span style="color: #0f172a; font-weight: 500;">${formatDate(savedWord.addedAt)}</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: #475569;">
+            <input type="checkbox" id="review-checkbox" ${isReviewed ? 'checked' : ''} 
+              style="width: 16px; height: 16px; cursor: pointer; accent-color: #8b5cf6;">
+            <span style="font-weight: 500;">已复习</span>
+          </label>
+          ${savedWord.lastReviewed ? `
+            <span style="font-size: 12px; color: #94a3b8;">
+              (最后复习: ${formatDate(savedWord.lastReviewed)})
+            </span>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }
+  
   // Actions
   html += `
     <div class="actions">
@@ -993,6 +1118,79 @@ function setupEventListeners(layerIndex) {
   if (!wordInfo || !wordInfo.data) return;
   
   const cleanWord = wordInfo.word.toLowerCase().replace(/[^a-z]/g, '');
+  
+  // 拖动功能
+  const wordHeader = layer.querySelector('.word-header');
+  if (wordHeader && layerIndex === wordStack.length - 1) {
+    let isDragging = false;
+    let startX, startY, initialLeft, initialTop;
+    let animationFrameId = null;
+    
+    wordHeader.addEventListener('mousedown', (e) => {
+      // 只忽略按钮点击,允许在其他任何地方拖动
+      if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+        return;
+      }
+      
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      
+      const rect = layer.getBoundingClientRect();
+      initialLeft = rect.left + rect.width / 2; // transform translateX(-50%)
+      initialTop = rect.top;
+      
+      // 禁用过渡动画以提升拖动流畅度
+      layer.style.transition = 'none';
+      
+      e.preventDefault();
+    });
+    
+    const onMouseMove = (e) => {
+      if (!isDragging) return;
+      
+      // 使用requestAnimationFrame优化性能
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      
+      animationFrameId = requestAnimationFrame(() => {
+        const deltaX = e.clientX - startX;
+        const deltaY = e.clientY - startY;
+        
+        const newLeft = initialLeft + deltaX;
+        const newTop = initialTop + deltaY;
+        
+        // 更新弹窗位置
+        layer.style.left = newLeft + 'px';
+        layer.style.top = newTop + 'px';
+      });
+    };
+    
+    const onMouseUp = () => {
+      if (isDragging) {
+        isDragging = false;
+        // 恢复过渡动画
+        layer.style.transition = '';
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId);
+          animationFrameId = null;
+        }
+      }
+    };
+    
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    
+    // 清理事件监听器
+    layer.addEventListener('DOMNodeRemoved', () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    });
+  }
   
   // Close button
   const closeBtn = layer.querySelector('#close-popup');
@@ -1050,6 +1248,84 @@ function setupEventListeners(layerIndex) {
     });
   }
   
+  // Star button for saving to vocabulary
+  const starBtn = layer.querySelector('#star-btn');
+  if (starBtn && typeof isWordSaved === 'function') {
+    // Check if word is already saved
+    isWordSaved(wordInfo.word).then(isSaved => {
+      if (isSaved) {
+        starBtn.classList.add('saved');
+        starBtn.title = '取消收藏';
+      }
+    }).catch(err => {
+      console.error('检查收藏状态失败:', err);
+    });
+    
+    starBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      if (typeof saveWord !== 'function' || typeof removeWord !== 'function') {
+        showToast('生词本功能加载中，请稍后再试');
+        return;
+      }
+      
+      const isSaved = starBtn.classList.contains('saved');
+      starBtn.style.pointerEvents = 'none';
+      
+      try {
+        if (isSaved) {
+          const result = await removeWord(wordInfo.word);
+          if (result.success) {
+            starBtn.classList.remove('saved');
+            starBtn.title = '收藏到生词本';
+            showToast('已取消收藏');
+            // 更新savedWord并重新渲染
+            wordInfo.savedWord = null;
+            renderPopupStack();
+          } else {
+            showToast('取消收藏失败');
+          }
+        } else {
+          const wordData = {
+            word: wordInfo.word,
+            phonetic: wordInfo.data.phonetic,
+            phoneticUs: wordInfo.data.phoneticUs,
+            phoneticUk: wordInfo.data.phoneticUk,
+            translation: wordInfo.data.translation,
+            definition: wordInfo.data.definition,
+            allDefinitions: wordInfo.data.allDefinitions,
+            examples: wordInfo.data.examples,
+            tags: wordInfo.data.youdaoTags || [],
+            synonyms: wordInfo.data.synonyms || [],
+            baseForm: wordInfo.data.baseForm,
+            baseFormTranslation: wordInfo.data.baseFormTranslation,
+            context: wordInfo.sentence || window.location.href
+          };
+          
+          const result = await saveWord(wordData);
+          if (result && result.success) {
+            starBtn.classList.add('saved');
+            starBtn.title = '取消收藏';
+            showToast(result.isNew ? '✨ 已收藏到生词本' : '📝 已更新生词本');
+            // 更新savedWord并重新渲染
+            if (typeof getWord === 'function') {
+              wordInfo.savedWord = await getWord(wordInfo.word);
+              renderPopupStack();
+            }
+          } else {
+            showToast('收藏失败: ' + (result?.error || '未知错误'));
+          }
+        }
+      } catch (error) {
+        console.error('收藏操作失败:', error);
+        showToast('操作失败: ' + error.message);
+      } finally {
+        starBtn.style.pointerEvents = '';
+      }
+    });
+  }
+  
   if (wordText) {
     wordText.addEventListener('click', (e) => {
       e.preventDefault();
@@ -1087,6 +1363,56 @@ function setupEventListeners(layerIndex) {
       const isHidden = baseformContent.style.display === 'none';
       baseformContent.style.display = isHidden ? 'block' : 'none';
       baseformIcon.textContent = isHidden ? '▲' : '▼';
+    });
+  }
+  
+  // 复习勾选框
+  const reviewCheckbox = layer.querySelector('#review-checkbox');
+  if (reviewCheckbox && wordInfo.savedWord) {
+    reviewCheckbox.addEventListener('change', async (e) => {
+      e.stopPropagation();
+      const isChecked = e.target.checked;
+      
+      if (!updateReviewInfo || typeof updateReviewInfo !== 'function') {
+        showToast('复习功能暂不可用');
+        return;
+      }
+      
+      try {
+        if (isChecked) {
+          await updateReviewInfo(wordInfo.word);
+          showToast('已标记为复习');
+          // 更新当前层的savedWord并重新渲染
+          if (typeof getWord === 'function') {
+            wordInfo.savedWord = await getWord(wordInfo.word);
+            renderPopupStack();
+          }
+        } else {
+          // 重置reviewCount
+          const VOCABULARY_KEY = 'vocabulary';
+          const STORAGE = chrome.storage.local;
+          const { vocabulary = [] } = await new Promise((resolve) => {
+            STORAGE.get(VOCABULARY_KEY, resolve);
+          });
+          const wordIndex = vocabulary.findIndex(w => w.word === wordInfo.word);
+          if (wordIndex >= 0) {
+            vocabulary[wordIndex].reviewCount = 0;
+            vocabulary[wordIndex].lastReviewed = null;
+            await new Promise((resolve) => {
+              STORAGE.set({ [VOCABULARY_KEY]: vocabulary }, resolve);
+            });
+            showToast('已取消复习标记');
+            // 更新当前层的savedWord并重新渲染
+            if (typeof getWord === 'function') {
+              wordInfo.savedWord = await getWord(wordInfo.word);
+              renderPopupStack();
+            }
+          }
+        }
+      } catch (error) {
+        console.error('复习状态更新失败:', error);
+        showToast('操作失败');
+      }
     });
   }
   
@@ -1178,12 +1504,13 @@ function setupEventListeners(layerIndex) {
   wordTags.forEach(tag => {
     tag.addEventListener('click', () => {
       const clickedWord = tag.textContent.trim();
-      const firstLayer = wordStack[0];
+      // 使用当前层的位置作为新查询的起点
+      const rect = layer.getBoundingClientRect();
       lookupWord(clickedWord, {
         word: clickedWord,
         sentence: clickedWord,
-        x: firstLayer ? firstLayer.x : window.innerWidth / 2,
-        y: firstLayer ? firstLayer.y : 100
+        x: rect.left + rect.width / 2,
+        y: rect.top + 60 // 在当前弹窗下方一点
       });
     });
   });
@@ -1257,9 +1584,26 @@ async function lookupWord(word, context) {
         if (response.success) {
           // Update the last item in stack with data
           if (wordStack.length > 0) {
-            wordStack[wordStack.length - 1].loading = false;
-            wordStack[wordStack.length - 1].data = response.data;
-            renderPopupStack();
+            // 获取收藏信息
+            if (typeof getWord === 'function') {
+              getWord(word).then(savedWord => {
+                wordStack[wordStack.length - 1].loading = false;
+                wordStack[wordStack.length - 1].data = response.data;
+                wordStack[wordStack.length - 1].savedWord = savedWord;
+                renderPopupStack();
+              }).catch(err => {
+                console.error('获取收藏信息失败:', err);
+                wordStack[wordStack.length - 1].loading = false;
+                wordStack[wordStack.length - 1].data = response.data;
+                wordStack[wordStack.length - 1].savedWord = null;
+                renderPopupStack();
+              });
+            } else {
+              wordStack[wordStack.length - 1].loading = false;
+              wordStack[wordStack.length - 1].data = response.data;
+              wordStack[wordStack.length - 1].savedWord = null;
+              renderPopupStack();
+            }
           }
         } else {
           if (wordStack.length > 0) {
@@ -1278,35 +1622,6 @@ async function lookupWord(word, context) {
       renderPopupStack();
     }
   }
-}
-
-// Save word to storage
-function saveWord(wordData) {
-  if (!chrome.runtime?.id) {
-    alert('Extension connection lost. Please refresh the page.');
-    return;
-  }
-  
-  chrome.runtime.sendMessage(
-    { type: 'SAVE_WORD', data: wordData },
-    (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('Save error:', chrome.runtime.lastError);
-        alert('Failed to save. Please refresh the page.');
-        return;
-      }
-      
-      if (response && response.success) {
-        // Show success feedback
-        const saveBtn = shadowRoot.getElementById('save-word');
-        if (saveBtn) {
-          saveBtn.textContent = '✅ Saved!';
-          saveBtn.disabled = true;
-          setTimeout(() => hidePopup(), 1000);
-        }
-      }
-    }
-  );
 }
 
 // Handle text selection

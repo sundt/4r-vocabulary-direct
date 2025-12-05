@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>生词本 - 4R Vocabulary</title>
+  <link rel="stylesheet" href="vocabulary-list.css">
+</head>
+<body>
+  <div class="container">
+    <!-- 头部 -->
+    <header class="header">
+      <h1>📚 我的生词本</h1>
+      <div class="stats">
+        <span class="stat-item">总计: <strong id="total-count">0</strong></span>
+        <span class="stat-item">未复习: <strong id="unreviewed-count">0</strong></span>
+        <span class="stat-item">已复习: <strong id="reviewed-count">0</strong></span>
+      </div>
+    </header>
+
+    <!-- 工具栏 -->
+    <div class="toolbar">
+      <div class="search-box">
+        <input type="text" id="search-input" placeholder="🔍 搜索单词...">
+      </div>
+      
+      <div class="action-buttons">
+        <button id="export-csv-btn" class="btn btn-secondary">导出CSV</button>
+        <button id="clear-all-btn" class="btn btn-danger">清空</button>
+      </div>
+    </div>
+
+    <!-- 页签导航 -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="review-status">📊 按复习状态</button>
+      <button class="tab-btn" data-tab="date-groups">📅 按日期分组</button>
+    </div>
+
+    <!-- 生词列表 -->
+    <div class="word-lists-container">
+      <!-- 按复习状态视图 -->
+      <div id="review-status-view" class="tab-content active">
+        <!-- 未复习单词 -->
+        <div class="word-section">
+          <h2 class="section-title">📝 未复习 <span class="count-badge">(<span id="unreviewed-section-count">0</span>)</span></h2>
+          <div class="word-list-simple" id="unreviewed-list">
+            <div class="empty-state">
+              <p class="empty-hint">暂无未复习的单词</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 已复习单词 -->
+        <div class="word-section">
+          <h2 class="section-title">✅ 已复习 <span class="count-badge">(<span id="reviewed-section-count">0</span>)</span></h2>
+          <div class="word-list-simple" id="reviewed-list">
+            <div class="empty-state">
+              <p class="empty-hint">暂无已复习的单词</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 全部为空时的提示 -->
+        <div class="empty-state" id="empty-state" style="display: none;">
+          <div class="empty-icon">📖</div>
+          <p>生词本还是空的</p>
+          <p class="empty-hint">在网页上选中单词，点击⭐即可收藏</p>
+        </div>
+      </div>
+
+      <!-- 按日期分组视图 -->
+      <div id="date-groups-view" class="tab-content" style="display: none;">
+        <div id="date-groups-container"></div>
+        
+        <!-- 空状态提示 -->
+        <div class="empty-state" id="date-empty-state" style="display: none;">
+          <div class="empty-icon">📖</div>
+          <p>生词本还是空的</p>
+          <p class="empty-hint">在网页上选中单词，点击⭐即可收藏</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 翻译弹窗容器 -->
+  <div id="popup-container"></div>
+
+  <!-- Toast通知 -->
+  <div id="toast" class="toast"></div>
+
+  <script src="vocabulary-manager.js"></script>
+  <script src="vocabulary-list.js"></script>
+</body>
+</html>
