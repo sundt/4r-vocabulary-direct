@@ -6,6 +6,12 @@
   let shadowRoot = null;
   let selectedWord = '';
   let contextSentence = '';
+  let isEnabled = true;
+
+  // Check if extension is enabled
+  chrome.storage.local.get(['enabled'], (result) => {
+    isEnabled = result.enabled !== undefined ? result.enabled : true;
+  });
 
   // Initialize Shadow DOM
   function initShadowDOM() {
@@ -173,6 +179,11 @@
 
   // Handle text selection
   function handleSelection() {
+    // Check if extension is enabled
+    if (!isEnabled) {
+      return;
+    }
+
     const selection = window.getSelection();
     const text = selection.toString().trim();
 
@@ -227,10 +238,17 @@
     }
   });
 
-  // Listen for messages from background script
+  // Listen for messages from popup or background script
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'TRANSLATION_UPDATE') {
       // Handle any updates from background if needed
+      sendResponse({ received: true });
+    } else if (message.type === 'TOGGLE_EXTENSION') {
+      // Handle enable/disable toggle from popup
+      isEnabled = message.enabled;
+      if (!isEnabled) {
+        hidePopup();
+      }
       sendResponse({ received: true });
     }
     return true;
