@@ -16,6 +16,12 @@
   // Initialize Shadow DOM
   function initShadowDOM() {
     if (shadowHost) return;
+    
+    // Ensure document.body exists
+    if (!document.body) {
+      console.warn('Document body not ready, deferring Shadow DOM initialization');
+      return;
+    }
 
     shadowHost = document.createElement('div');
     shadowHost.id = '4r-vocab-extension-shadow-host';
@@ -268,18 +274,39 @@
     });
   }
 
-  // Initialize
-  initShadowDOM();
+  // Initialize Shadow DOM when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initShadowDOM);
+  } else {
+    // DOM is already loaded
+    initShadowDOM();
+  }
 
   // Listen for text selection
   document.addEventListener('mouseup', (e) => {
     // Small delay to ensure selection is complete
-    setTimeout(handleSelection, 10);
+    setTimeout(() => {
+      // Ensure Shadow DOM is initialized before handling selection
+      if (!shadowHost) {
+        initShadowDOM();
+      }
+      if (shadowHost) {
+        handleSelection();
+      }
+    }, 10);
   });
 
   // Hide popup when clicking outside
   document.addEventListener('mousedown', (e) => {
-    if (shadowHost && !shadowHost.contains(e.target)) {
+    if (!shadowHost) return;
+    
+    // For closed Shadow DOM, check if click is on the shadow host element
+    // composedPath() returns the event's path including shadow DOM elements
+    const path = e.composedPath ? e.composedPath() : [e.target];
+    const clickedInsidePopup = path.some(el => el === shadowHost);
+    
+    // Hide popup only if clicked outside the shadow host
+    if (!clickedInsidePopup) {
       hidePopup();
     }
   });

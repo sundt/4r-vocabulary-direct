@@ -163,12 +163,16 @@ chrome.tabs.sendMessage(tabId, { type: 'TOGGLE_EXTENSION' });
 
 ### XSS Prevention
 
-1. **HTML Escaping**
+1. **HTML Escaping** (Service Worker Compatible)
    ```javascript
    function escapeHtml(text) {
-     const div = document.createElement('div');
-     div.textContent = text;
-     return div.innerHTML;
+     if (!text) return '';
+     return text
+       .replace(/&/g, '&amp;')
+       .replace(/</g, '&lt;')
+       .replace(/>/g, '&gt;')
+       .replace(/"/g, '&quot;')
+       .replace(/'/g, '&#039;');
    }
    ```
 
