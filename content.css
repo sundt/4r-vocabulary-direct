@@ -1,0 +1,11 @@
+/* Content CSS - Minimal styles for the shadow host */
+#4r-vocab-extension-shadow-host {
+  all: initial;
+  position: fixed;
+  z-index: 2147483647;
+  pointer-events: none;
+}
+
+#4r-vocab-extension-shadow-host * {
+  pointer-events: auto;
+}
