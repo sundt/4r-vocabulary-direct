@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>4R Vocabulary Direct</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header>
+      <h1>4R Vocabulary Direct</h1>
+      <p class="subtitle">Lightweight vocabulary tool</p>
+    </header>
+
+    <main>
+      <section class="status-section">
+        <div class="status-item">
+          <span class="status-label">Status:</span>
+          <span class="status-value" id="status">Active</span>
+        </div>
+      </section>
+
+      <section class="instructions-section">
+        <h2>How to use:</h2>
+        <ol>
+          <li>Select any English word or phrase on a webpage</li>
+          <li>A popup will appear with the definition</li>
+          <li>The context sentence is automatically captured</li>
+        </ol>
+      </section>
+
+      <section class="settings-section">
+        <h2>Settings:</h2>
+        <label class="toggle-container">
+          <input type="checkbox" id="enabled-toggle" checked>
+          <span class="toggle-label">Enable extension</span>
+        </label>
+      </section>
+
+      <section class="info-section">
+        <div class="info-item">
+          <strong>Version:</strong> 1.0.0
+        </div>
+        <div class="info-item">
+          <strong>API:</strong> Free Dictionary API
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>Select text to start learning vocabulary!</p>
+    </footer>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

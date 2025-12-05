@@ -1,0 +1,31 @@
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+
+# Node modules (if adding build tools later)
+node_modules/
+
+# Build artifacts (if adding build process later)
+dist/
+build/
+
+# Extension package files
+*.crx
+*.pem
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
