@@ -81,6 +81,95 @@ function highlightCollocations(sentence) {
   return result;
 }
 
+// 高亮查询单词和搭配词
+function highlightExampleSentence(sentence, queryWord) {
+  let result = sentence;
+  const highlights = [];
+  
+  // 1. 收集查询单词的所有匹配位置
+  const wordPattern = new RegExp(`\\b(${queryWord})\\b`, 'gi');
+  let match;
+  while ((match = wordPattern.exec(sentence)) !== null) {
+    highlights.push({
+      text: match[0],
+      index: match.index,
+      length: match[0].length,
+      type: 'query' // 查询单词
+    });
+  }
+  
+  // 2. 收集搭配词的匹配位置
+  commonCollocations.forEach(({ pattern, checkPhrasal }) => {
+    const regex = new RegExp(pattern, 'gi');
+    while ((match = regex.exec(sentence)) !== null) {
+      // 检查搭配是否包含查询单词
+      const collocationText = match[0].toLowerCase();
+      const queryLower = queryWord.toLowerCase();
+      
+      if (collocationText.includes(queryLower)) {
+        if (checkPhrasal) {
+          const verb = match[1];
+          const particle = match[2];
+          if (phrasalVerbParticles.has(particle.toLowerCase())) {
+            highlights.push({
+              text: match[0],
+              index: match.index,
+              length: match[0].length,
+              type: 'collocation' // 搭配词
+            });
+          }
+        } else {
+          highlights.push({
+            text: match[0],
+            index: match.index,
+            length: match[0].length,
+            type: 'collocation' // 搭配词
+          });
+        }
+      }
+    }
+  });
+  
+  // 3. 排序并去重，优先保留搭配（因为搭配通常包含查询单词）
+  highlights.sort((a, b) => {
+    if (a.index !== b.index) return a.index - b.index;
+    // 如果位置相同，优先保留搭配
+    if (a.type === 'collocation') return -1;
+    if (b.type === 'collocation') return 1;
+    return 0;
+  });
+  
+  const uniqueHighlights = [];
+  let lastEnd = -1;
+  
+  for (const highlight of highlights) {
+    if (highlight.index >= lastEnd) {
+      uniqueHighlights.push(highlight);
+      lastEnd = highlight.index + highlight.length;
+    }
+  }
+  
+  // 4. 从后往前替换，避免位置错乱
+  for (let i = uniqueHighlights.length - 1; i >= 0; i--) {
+    const highlight = uniqueHighlights[i];
+    const before = result.substring(0, highlight.index);
+    let highlighted;
+    
+    if (highlight.type === 'collocation') {
+      // 搭配词：紫色
+      highlighted = `<span class="collocation">${highlight.text}</span>`;
+    } else {
+      // 查询单词：蓝色加粗
+      highlighted = `<span style="color: #2563eb; font-weight: 600;">${highlight.text}</span>`;
+    }
+    
+    const after = result.substring(highlight.index + highlight.length);
+    result = before + highlighted + after;
+  }
+  
+  return result;
+}
+
 // Initialize Shadow DOM for isolated styling
 function initializeShadowDOM() {
   if (shadowRoot) return;
@@ -249,9 +338,9 @@ function initializeShadowDOM() {
     
     .phonetic {
       color: #64748b;
-      font-family: serif;
+      font-family: "Doulos SIL", "Charis SIL", "Gentium Plus", "DejaVu Sans", "Lucida Sans Unicode", "Arial Unicode MS", serif;
       font-size: 14px;
-      font-weight: 500;
+      font-weight: 400;
     }
     
     .word-tags {
@@ -385,7 +474,7 @@ function initializeShadowDOM() {
       color: #475569;
       line-height: 1.3;
       font-size: 14px;
-      padding: 8px;
+      padding: 6px 8px;
       background: rgba(248, 250, 252, 0.5);
       border-radius: 12px;
       margin-bottom: 4px;
@@ -410,9 +499,6 @@ function initializeShadowDOM() {
     .collocation {
       color: #8b5cf6;
       font-weight: 600;
-      background: linear-gradient(to bottom, transparent 60%, rgba(139, 92, 246, 0.15) 60%);
-      padding: 0 2px;
-      border-radius: 2px;
     }
     
     .actions {
@@ -724,7 +810,7 @@ function renderPopupStack() {
 
 // Generate compact HTML for old layers
 function generateCompactPopupHTML(data) {
-  const { word, phoneticUs, phoneticUk, collins, oxford, tag } = data;
+  const { word, phoneticUs, phoneticUk, youdaoTags } = data;
   
   let html = `<div style="display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">`;
   html += `<div class="word-title compact-word-text" style="font-size: 20px; cursor: pointer;" title="点击复制单词">${word}</div>`;
@@ -743,12 +829,9 @@ function generateCompactPopupHTML(data) {
       <span class="phonetic" style="font-size: 11px;">${phoneticUk}</span>`;
   }
   
-  // Tags
-  if (collins && collins > 0) {
-    html += `<span class="tag tag-collins" style="font-size: 9px; padding: 1px 4px;">${'★'.repeat(collins)}</span>`;
-  }
-  if (oxford) {
-    html += `<span class="tag tag-oxford" style="font-size: 9px; padding: 1px 4px;">牛津3000</span>`;
+  // Tags - only show Youdao tags
+  if (youdaoTags && youdaoTags.length > 0) {
+    html += youdaoTags.map(t => `<span class="tag tag-level" style="font-size: 9px; padding: 1px 4px;">${t}</span>`).join('');
   }
   
   html += `</div>`;
@@ -757,8 +840,8 @@ function generateCompactPopupHTML(data) {
 
 // Generate full HTML for top layer
 function generateFullPopupHTML(data) {
-  const { word, phonetic, phoneticUs, phoneticUk, audioUs, audioUk, definition, 
-          partOfSpeech, synonyms, antonyms, examples, translation, collins, oxford, tag } = data;
+  const { word, phonetic, phoneticUs, phoneticUk, audioUs, audioUk, definition, allDefinitions,
+          partOfSpeech, synonyms, antonyms, examples, translation, baseForm, baseFormType, baseFormTranslation, youdaoTags } = data;
   
   let html = `
     <button class="close-btn" id="close-popup">×</button>
@@ -789,37 +872,34 @@ function generateFullPopupHTML(data) {
     }
   }
   
-  // Tags on same line as word
-  if (collins || oxford || tag) {
-    if (collins && collins > 0) {
-      html += `<span class="tag tag-collins">${'★'.repeat(collins)}</span>`;
-    }
-    
-    if (oxford) {
-      html += `<span class="tag tag-oxford">牛津3000</span>`;
-    }
-    
-    if (tag) {
-      const tags = tag.split(' ').map(t => {
-        const tagMap = { 'zk': '中考', 'gk': '高考', 'cet4': '四级', 'cet6': '六级' };
-        return tagMap[t] || t;
-      });
-      html += tags.map(t => `<span class="tag tag-level">${t}</span>`).join('');
-    }
+  // Tags on same line as word - only show Youdao tags
+  if (youdaoTags && youdaoTags.length > 0) {
+    html += youdaoTags.map(t => `<span class="tag tag-level">${t}</span>`).join('');
   }
   
   html += `</div>`; // Close word-title-row
   
-  // Definition - inside word-header, below word
-  if (definition) {
-    html += `<div class="definition" style="margin-top: 6px;">${definition}</div>`;
+  // Definitions - inside word-header, below word
+  if (allDefinitions && allDefinitions.length > 0) {
+    html += `<div class="definition" style="margin-top: 6px; font-size: 14px;">`;
+    allDefinitions.forEach((defItem, index) => {
+      const number = allDefinitions.length > 1 ? `${index + 1}. ` : '';
+      const def = typeof defItem === 'string' ? defItem : defItem.definition;
+      const syns = typeof defItem === 'object' && defItem.synonyms && defItem.synonyms.length > 0 
+        ? ` <span style="color: #8b5cf6; font-style: italic; font-size: 14px;">(syn: ${defItem.synonyms.join(', ')})</span>` 
+        : '';
+      html += `<div style="margin-bottom: ${index < allDefinitions.length - 1 ? '4px' : '0'}; font-size: 14px;">${number}${def}${syns}</div>`;
+    });
+    html += `</div>`;
+  } else if (definition) {
+    html += `<div class="definition" style="margin-top: 6px; font-size: 14px;">${definition}</div>`;
   }
   
   html += `</div>`; // Close word-header
   
   // Synonyms and Antonyms in one block
   if ((synonyms && synonyms.length > 0) || (antonyms && antonyms.length > 0)) {
-    html += `<div class="section" style="display: flex; gap: 12px; flex-wrap: wrap;">`;
+    html += `<div class="section" style="display: flex; gap: 12px; flex-wrap: wrap; padding: 6px 12px;">`;
     
     // Synonyms
     if (synonyms && synonyms.length > 0) {
@@ -848,25 +928,45 @@ function generateFullPopupHTML(data) {
     html += `</div>`;
   }
   
-  // Examples with collocation highlighting
+  // Examples with query word and collocation highlighting
   if (examples && examples.length > 0) {
     html += examples.map(ex => {
-      const highlightedSentence = highlightCollocations(ex.sentence);
+      const highlightedSentence = highlightExampleSentence(ex.sentence, word);
       return `
         <div class="example">
-          <div class="example-text">"${highlightedSentence}"</div>
+          <div class="example-text">${highlightedSentence}</div>
           <div class="example-source">— ${ex.source}${ex.year ? ` (${ex.year})` : ''}</div>
         </div>
       `;
     }).join('');
   }
   
-  // Chinese Translation
+  // Chinese Translation (collapsible)
   if (translation) {
     html += `
       <div class="section" style="padding: 8px 12px; margin-bottom: 4px;">
-        <div style="color: #475569; font-size: 13px; line-height: 1.4;">
+        <div style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;" id="translation-toggle">
+          <span style="color: #8b5cf6; font-weight: 600; font-size: 13px;">中文翻译</span>
+          <span style="color: #8b5cf6; font-size: 12px;" id="translation-icon">▼</span>
+        </div>
+        <div id="translation-content" style="color: #475569; font-size: 13px; line-height: 1.4; margin-top: 6px; display: none;">
           ${translation}
+        </div>
+      </div>
+    `;
+  }
+  
+  // Base Form (Word Origin) - collapsible
+  if (baseForm) {
+    const typeLabel = baseFormType === 'verb' ? '动词' : baseFormType === 'adjective' ? '形容词' : baseFormType === 'noun' ? '名词' : '';
+    html += `
+      <div class="section" style="padding: 8px 12px; margin-bottom: 4px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;" id="baseform-toggle">
+          <span style="color: #8b5cf6; font-weight: 600; font-size: 13px;">词形变化</span>
+          <span style="color: #8b5cf6; font-size: 12px;" id="baseform-icon">▼</span>
+        </div>
+        <div id="baseform-content" style="color: #475569; font-size: 13px; line-height: 1.4; margin-top: 6px; display: none;">
+          <span style="cursor: pointer;">${baseForm}</span>${typeLabel ? ` (${typeLabel})` : ''}${baseFormTranslation ? ` — ${baseFormTranslation}` : ''}
         </div>
       </div>
     `;
@@ -955,6 +1055,38 @@ function setupEventListeners(layerIndex) {
       e.preventDefault();
       e.stopPropagation();
       copyWord();
+    });
+  }
+  
+  // Translation toggle
+  const translationToggle = layer.querySelector('#translation-toggle');
+  const translationContent = layer.querySelector('#translation-content');
+  const translationIcon = layer.querySelector('#translation-icon');
+  
+  if (translationToggle && translationContent && translationIcon) {
+    translationToggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const isHidden = translationContent.style.display === 'none';
+      translationContent.style.display = isHidden ? 'block' : 'none';
+      translationIcon.textContent = isHidden ? '▲' : '▼';
+    });
+  }
+  
+  // Base form toggle
+  const baseformToggle = layer.querySelector('#baseform-toggle');
+  const baseformContent = layer.querySelector('#baseform-content');
+  const baseformIcon = layer.querySelector('#baseform-icon');
+  
+  if (baseformToggle && baseformContent && baseformIcon) {
+    baseformToggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const isHidden = baseformContent.style.display === 'none';
+      baseformContent.style.display = isHidden ? 'block' : 'none';
+      baseformIcon.textContent = isHidden ? '▲' : '▼';
     });
   }
   
@@ -1213,9 +1345,19 @@ function handleSelection(event) {
     return;
   }
   
-  // Only process single words or short phrases (up to 3 words)
-  const wordCount = context.word.split(/\s+/).length;
-  if (wordCount > 3) {
+  // Only process English text (letters, hyphens, apostrophes)
+  const englishPattern = /^[a-zA-Z\s\-']+$/;
+  if (!englishPattern.test(context.word)) {
+    return;
+  }
+  
+  // Filter out single letters
+  if (context.word.length === 1) {
+    return;
+  }
+  
+  // Only process single words (no spaces)
+  if (context.word.includes(' ')) {
     return;
   }
   

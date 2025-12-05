@@ -20,21 +20,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 /**
- * Fetch word definition from online API
+ * Fetch word definition from Youdao API only
  */
 async function handleWordLookup(word, sendResponse) {
   try {
     const cleanWord = word.toLowerCase().trim();
     
-    // Try multiple APIs for better coverage
-    const result = await fetchFromDictionaryAPI(cleanWord);
+    // Use Youdao API as the primary and only source
+    const result = await fetchFromYoudaoAPI(cleanWord);
     
     if (result.success) {
       sendResponse({ success: true, data: result.data });
     } else {
-      // Fallback: Try alternative API
-      const fallbackResult = await fetchFromYoudaoAPI(cleanWord);
-      sendResponse(fallbackResult);
+      sendResponse({ success: false, error: result.error || 'Word not found' });
     }
   } catch (error) {
     console.error('Word lookup error:', error);
@@ -43,173 +41,6 @@ async function handleWordLookup(word, sendResponse) {
       error: 'Failed to fetch word definition',
       message: error.message 
     });
-  }
-}
-
-/**
- * Primary API: Free Dictionary API
- * https://dictionaryapi.dev/
- */
-async function fetchFromDictionaryAPI(word) {
-  try {
-    const response = await fetch(
-      `https://api.dictionaryapi.dev/api/v2/entries/en/${word}`
-    );
-    
-    if (!response.ok) {
-      return { success: false, error: 'Word not found' };
-    }
-    
-    const data = await response.json();
-    const entry = data[0];
-    
-    // Extract relevant information
-    const meanings = entry.meanings || [];
-    const firstMeaning = meanings[0] || {};
-    const definitions = firstMeaning.definitions || [];
-    
-    // Get phonetics - 从phonetics数组中智能提取
-    const phonetics = entry.phonetics || [];
-    
-    let phoneticUs = '';
-    let phoneticUk = '';
-    
-    // 策略1: 查找明确标记为US/UK的audio
-    const usAudioEntry = phonetics.find(p => p.text && p.audio && p.audio.includes('-us'));
-    const ukAudioEntry = phonetics.find(p => p.text && p.audio && p.audio.includes('-uk'));
-    
-    if (usAudioEntry) phoneticUs = usAudioEntry.text;
-    if (ukAudioEntry) phoneticUk = ukAudioEntry.text;
-    
-    // 策略2: 如果有audio但没有US/UK标记，根据位置判断
-    if (!phoneticUs || !phoneticUk) {
-      const audioEntries = phonetics.filter(p => p.text && p.audio);
-      if (audioEntries.length >= 2) {
-        // 通常第一个是UK，第二个是US
-        if (!phoneticUk && audioEntries[0]) phoneticUk = audioEntries[0].text;
-        if (!phoneticUs && audioEntries[1]) phoneticUs = audioEntries[1].text;
-      } else if (audioEntries.length === 1) {
-        // 只有一个，audio包含us就是US，否则是UK
-        if (audioEntries[0].audio.includes('us')) {
-          phoneticUs = audioEntries[0].text;
-        } else {
-          phoneticUk = audioEntries[0].text;
-        }
-      }
-    }
-    
-    // 策略3: 查找没有audio的entry（通常是UK）
-    if (!phoneticUk) {
-      const noAudioEntry = phonetics.find(p => p.text && !p.audio);
-      if (noAudioEntry) phoneticUk = noAudioEntry.text;
-    }
-    
-    // 策略4: 如果只有一个音标，US和UK使用同一个
-    if (phoneticUs && !phoneticUk) {
-      phoneticUk = phoneticUs;
-    } else if (phoneticUk && !phoneticUs) {
-      phoneticUs = phoneticUk;
-    }
-    
-    // 策略5: 最后的fallback
-    if (!phoneticUs && !phoneticUk) {
-      const fallback = entry.phonetic || phonetics.find(p => p.text)?.text || '';
-      phoneticUs = fallback;
-      phoneticUk = fallback;
-    }
-    
-    console.log(`Phonetics for "${word}": US=${phoneticUs}, UK=${phoneticUk}`);
-    
-    // Get audio URLs
-    const audioUs = phonetics.find(p => p.audio.includes('-us'))?.audio || 
-                    phonetics.find(p => p.audio)?.audio || '';
-    const audioUk = phonetics.find(p => p.audio.includes('-uk'))?.audio || audioUs;
-    
-    // Extract synonyms and antonyms
-    const synonyms = [];
-    const antonyms = [];
-    
-    meanings.forEach(meaning => {
-      if (meaning.synonyms) synonyms.push(...meaning.synonyms);
-      if (meaning.antonyms) antonyms.push(...meaning.antonyms);
-      meaning.definitions?.forEach(def => {
-        if (def.synonyms) synonyms.push(...def.synonyms);
-        if (def.antonyms) antonyms.push(...def.antonyms);
-      });
-    });
-    
-    // Fetch additional metadata (Collins, Oxford, tags)
-    let metadata;
-    try {
-      metadata = await fetchWordMetadata(word);
-    } catch (error) {
-      console.error('Failed to fetch metadata, using defaults:', error);
-      // Default metadata to ensure tags always show
-      metadata = {
-        collins: 3,
-        oxford: false,
-        tag: 'cet4'
-      };
-    }
-    
-    console.log('Final metadata for', word, ':', metadata);
-    
-    // Try to get Chinese translation from Youdao with timeout
-    let translation = '';
-    try {
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout')), 3000)
-      );
-      const youdaoData = await Promise.race([
-        fetchFromYoudaoAPI(word),
-        timeoutPromise
-      ]);
-      if (youdaoData.success && youdaoData.data.translation) {
-        translation = youdaoData.data.translation;
-      }
-    } catch (err) {
-      console.log('Failed to fetch translation from Youdao:', err.message);
-      // Continue without translation
-    }
-    
-    // Build structured response
-    const result = {
-      word: entry.word,
-      phonetic: entry.phonetic || phoneticUs || phoneticUk,
-      phoneticUs: phoneticUs,
-      phoneticUk: phoneticUk,
-      audioUs: audioUs,
-      audioUk: audioUk,
-      definition: definitions[0]?.definition || '',
-      partOfSpeech: firstMeaning.partOfSpeech || '',
-      translation: translation,
-      synonyms: [...new Set(synonyms)].slice(0, 5),
-      antonyms: [...new Set(antonyms)].slice(0, 5),
-      examples: definitions
-        .filter(def => def.example)
-        .slice(0, 3)
-        .map(def => ({
-          sentence: def.example,
-          source: 'Dictionary API',
-          year: new Date().getFullYear()
-        })),
-      meanings: meanings.map(m => ({
-        partOfSpeech: m.partOfSpeech,
-        definitions: m.definitions.slice(0, 3).map(d => ({
-          definition: d.definition,
-          example: d.example
-        }))
-      })),
-      // Add metadata - ensure values are always set
-      collins: metadata.collins || 3,
-      oxford: metadata.oxford || false,
-      tag: metadata.tag || 'cet4'
-    };
-    
-    return { success: true, data: result };
-  } catch (error) {
-    console.error('Dictionary API error:', error);
-    return { success: false, error: error.message };
   }
 }
 
@@ -314,12 +145,85 @@ async function fetchWordMetadata(word) {
 }
 
 /**
- * Fallback API: Youdao (with basic scraping)
- * Note: This is a simplified version
+ * Detect base form of a word using pattern matching
+ */
+function detectBaseForm(word) {
+  const originalWord = word.toLowerCase();
+  let baseForm = '';
+  let baseFormType = '';
+  
+  // Common derivation patterns (ordered by specificity)
+  const patterns = [
+    // -tion/-sion endings (nouns from verbs)
+    { test: /(.+)ision$/, replace: '$1ide', type: 'verb' },      // decision → decide
+    { test: /(.+)ation$/, replace: '$1ate', type: 'verb' },      // creation → create
+    { test: /(.+)ution$/, replace: '$1ute', type: 'verb' },      // solution → solve
+    { test: /(.+[^s])tion$/, replace: '$1t', type: 'verb' },     // action → act
+    { test: /(.+)sion$/, replace: '$1de', type: 'verb' },        // revision → revise
+    
+    // -ment endings (nouns from verbs)
+    { test: /(.+)ment$/, replace: '$1', type: 'verb' },          // development → develop
+    
+    // -ance/-ence endings (nouns from verbs)
+    { test: /(.+)ance$/, replace: '$1', type: 'verb' },          // performance → perform
+    { test: /(.+)ence$/, replace: '$1', type: 'verb' },          // existence → exist
+    
+    // -ness endings (nouns from adjectives)
+    { test: /(.+)ness$/, replace: '$1', type: 'adjective' },     // kindness → kind
+    
+    // -ity/-ty endings (nouns from adjectives)
+    { test: /(.+)ability$/, replace: '$1able', type: 'adjective' }, // capability → capable
+    { test: /(.+)ibility$/, replace: '$1ible', type: 'adjective' },  // possibility → possible
+    { test: /(.+[^i])ty$/, replace: '$1', type: 'adjective' },   // certainty → certain
+    
+    // -ly endings (adverbs from adjectives)
+    { test: /(.+)ily$/, replace: '$1y', type: 'adjective' },     // happily → happy
+    { test: /(.+)ly$/, replace: '$1', type: 'adjective' },       // quickly → quick
+    
+    // Verb forms
+    { test: /(.+[^aeiou])ied$/, replace: '$1y', type: 'verb' },  // tried → try
+    { test: /(.+)ing$/, replace: '$1', type: 'verb' },           // running → run
+    { test: /(.+)ed$/, replace: '$1', type: 'verb' },            // played → play
+  ];
+  
+  for (const pattern of patterns) {
+    const match = originalWord.match(pattern.test);
+    if (match && originalWord.length > 4) {
+      baseForm = originalWord.replace(pattern.test, pattern.replace);
+      
+      // Handle double consonants (running → run, stopped → stop)
+      if (baseForm.length >= 3) {
+        const lastTwo = baseForm.slice(-2);
+        if (lastTwo[0] === lastTwo[1] && !'aeiou'.includes(lastTwo[0])) {
+          baseForm = baseForm.slice(0, -1);
+        }
+      }
+      
+      // Special cases
+      if (originalWord === 'solution') baseForm = 'solve';
+      
+      baseFormType = pattern.type;
+      
+      // Only use if baseForm is different from original
+      if (baseForm === originalWord) {
+        baseForm = '';
+        baseFormType = '';
+      }
+      
+      if (baseForm) break;
+    }
+  }
+  
+  return { baseForm, baseFormType };
+}
+
+/**
+ * Primary API: Youdao Dictionary API
+ * Fetches all data from Youdao only
  */
 async function fetchFromYoudaoAPI(word) {
   try {
-    // Use Youdao's suggest API (public endpoint)
+    // Use Youdao's API (public endpoint)
     const response = await fetch(
       `https://dict.youdao.com/jsonapi?q=${encodeURIComponent(word)}`
     );
@@ -330,7 +234,73 @@ async function fetchFromYoudaoAPI(word) {
     
     const data = await response.json();
     
-    // Basic parsing of Youdao response
+    // Extract all English definitions with synonyms from ee (English-English) field (WordNet source)
+    let englishDefinitions = [];
+    if (data.ee?.word?.trs?.[0]?.tr) {
+      englishDefinitions = data.ee.word.trs[0].tr
+        .map(item => {
+          const definition = item.l?.i;
+          const synonyms = item['similar-words']?.map(sw => sw.similar).filter(s => s) || [];
+          return {
+            definition: definition,
+            synonyms: synonyms
+          };
+        })
+        .filter(item => item.definition && item.definition.trim() !== '');
+    }
+    
+    // Extract authoritative examples (auth_sents_part) - 权威例句
+    let authExamples = [];
+    if (data.auth_sents_part?.sent) {
+      authExamples = data.auth_sents_part.sent.slice(0, 3).map(item => ({
+        sentence: item.foreign?.replace(/<\/?b>/g, '') || '',
+        source: item.source?.replace(/<\/?i>/g, '') || 'Authoritative',
+        type: 'auth'
+      }));
+    }
+    
+    // Extract media examples (media_sents_part) - 原声例句
+    let mediaExamples = [];
+    if (data.media_sents_part?.sent) {
+      mediaExamples = data.media_sents_part.sent.slice(0, 3).map(item => ({
+        sentence: item.eng?.replace(/<\/?b>/g, '').replace(/<br>/g, '') || '',
+        source: item.snippets?.snippet?.[0]?.source || 'Media',
+        type: 'media'
+      }));
+    }
+    
+    // Combine examples: first auth, then media
+    const youdaoExamples = [...authExamples, ...mediaExamples];
+    
+    // Extract exam type tags
+    const examTags = data.ec?.exam_type || [];
+    
+    // Extract synonyms from syno field
+    let synonyms = [];
+    if (data.syno?.synos && data.syno.synos.length > 0) {
+      synonyms = data.syno.synos[0].syno?.ws?.map(item => item.w).filter(w => w) || [];
+    }
+    
+    // Detect base form
+    const { baseForm, baseFormType } = detectBaseForm(word);
+    
+    // Get translation for base form if it exists
+    let baseFormTranslation = '';
+    if (baseForm) {
+      try {
+        const baseResponse = await fetch(
+          `https://dict.youdao.com/jsonapi?q=${encodeURIComponent(baseForm)}`
+        );
+        if (baseResponse.ok) {
+          const baseData = await baseResponse.json();
+          baseFormTranslation = baseData.ec?.word?.[0]?.trs?.[0]?.tr?.[0]?.l?.i?.[0] || '';
+        }
+      } catch (err) {
+        console.log('Failed to fetch base form translation:', err.message);
+      }
+    }
+    
+    // Build complete response
     const result = {
       word: word,
       phonetic: data.ec?.word?.[0]?.usphone || data.ec?.word?.[0]?.ukphone || '',
@@ -338,12 +308,17 @@ async function fetchFromYoudaoAPI(word) {
       phoneticUk: data.ec?.word?.[0]?.ukphone || '',
       audioUs: `https://dict.youdao.com/dictvoice?type=0&audio=${word}`,
       audioUk: `https://dict.youdao.com/dictvoice?type=1&audio=${word}`,
-      definition: data.ec?.word?.[0]?.trs?.[0]?.tr?.[0]?.l?.i?.[0] || '',
+      definition: englishDefinitions.length > 0 ? englishDefinitions[0].definition : (data.ec?.word?.[0]?.trs?.[0]?.tr?.[0]?.l?.i?.[0] || ''),
+      allDefinitions: englishDefinitions,
       translation: data.ec?.word?.[0]?.trs?.[0]?.tr?.[0]?.l?.i?.[0] || '',
       partOfSpeech: '',
-      synonyms: [],
+      synonyms: synonyms,
       antonyms: [],
-      examples: []
+      examples: youdaoExamples,
+      youdaoTags: examTags,
+      baseForm: baseForm,
+      baseFormType: baseFormType,
+      baseFormTranslation: baseFormTranslation
     };
     
     return { success: true, data: result };
