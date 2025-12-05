@@ -153,11 +153,15 @@
             <p style="font-size: 12px; color: #666;">Please check your internet connection and try again.</p>`;
   }
 
-  // Escape HTML to prevent XSS
+  // Escape HTML to prevent XSS (Service Worker compatible)
   function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    if (!text) return '';
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   // Listen for extension installation

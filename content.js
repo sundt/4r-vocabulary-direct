@@ -108,11 +108,46 @@
 
   // Extract sentence context around selected text
   function getContextSentence(selection) {
-    const range = selection.getRangeAt(0);
-    const container = range.commonAncestorContainer;
-    const textNode = container.nodeType === Node.TEXT_NODE ? container : container.firstChild;
-    
-    if (!textNode || !textNode.textContent) {
+    try {
+      const range = selection.getRangeAt(0);
+      const container = range.commonAncestorContainer;
+      
+      // Find the text node - handle case where container doesn't have firstChild
+      let textNode = null;
+      if (container.nodeType === Node.TEXT_NODE) {
+        textNode = container;
+      } else if (container.firstChild && container.firstChild.nodeType === Node.TEXT_NODE) {
+        textNode = container.firstChild;
+      } else if (container.textContent) {
+        // Fallback: use the container's text content
+        const fullText = container.textContent;
+        const selectedText = selection.toString();
+        const startIndex = fullText.indexOf(selectedText);
+        
+        if (startIndex !== -1) {
+          // Try to extract sentence from container text
+          let sentenceStart = fullText.lastIndexOf('.', startIndex);
+          if (sentenceStart === -1) sentenceStart = fullText.lastIndexOf('!', startIndex);
+          if (sentenceStart === -1) sentenceStart = fullText.lastIndexOf('?', startIndex);
+          if (sentenceStart === -1) sentenceStart = 0;
+          else sentenceStart += 1;
+
+          let sentenceEnd = fullText.indexOf('.', startIndex + selectedText.length);
+          if (sentenceEnd === -1) sentenceEnd = fullText.indexOf('!', startIndex + selectedText.length);
+          if (sentenceEnd === -1) sentenceEnd = fullText.indexOf('?', startIndex + selectedText.length);
+          if (sentenceEnd === -1) sentenceEnd = fullText.length;
+          else sentenceEnd += 1;
+
+          return fullText.substring(sentenceStart, sentenceEnd).trim();
+        }
+        return fullText.trim();
+      }
+      
+      if (!textNode || !textNode.textContent) {
+        return '';
+      }
+    } catch (error) {
+      console.error('Error extracting context:', error);
       return '';
     }
 
@@ -140,6 +175,17 @@
     return fullText.substring(sentenceStart, sentenceEnd).trim();
   }
 
+  // Escape HTML to prevent XSS
+  function escapeHtml(text) {
+    if (!text) return '';
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   // Show popup with translation
   function showPopup(x, y, word, context, translation) {
     if (!shadowRoot) return;
@@ -150,7 +196,7 @@
     const translationDiv = shadowRoot.querySelector('.vocab-popup-translation');
 
     header.textContent = word;
-    contextDiv.innerHTML = `<strong>Context:</strong> ${context}`;
+    contextDiv.innerHTML = `<strong>Context:</strong> ${escapeHtml(context)}`;
     translationDiv.innerHTML = translation;
 
     // Position popup near selection
