@@ -35,10 +35,13 @@ function saveWord(wordData) {
           definition: wordData.definition || vocabulary[existingIndex].definition,
           tags: wordData.tags || vocabulary[existingIndex].tags,
           reviewCount: (vocabulary[existingIndex].reviewCount || 0) + 1,
-          lastReviewed: new Date().toISOString()
+          lastReviewed: new Date().toISOString(),
+          // 更新上下文信息（保留原有的，如果没有新的）
+          contextSentence: wordData.contextSentence || vocabulary[existingIndex].contextSentence || '',
+          sourceUrl: wordData.sourceUrl || vocabulary[existingIndex].sourceUrl || ''
         };
       } else {
-        // 添加新单词 - 只保存核心信息
+        // 添加新单词 - 保存核心信息和上下文
         vocabulary.push({
           word: wordData.word,
           phonetic: wordData.phonetic || '',
@@ -47,7 +50,10 @@ function saveWord(wordData) {
           tags: wordData.tags || [],
           addedAt: new Date().toISOString(),
           reviewCount: 0,
-          lastReviewed: null
+          lastReviewed: null,
+          // 新增：保存上下文句子和来源URL
+          contextSentence: wordData.contextSentence || '',
+          sourceUrl: wordData.sourceUrl || ''
         });
       }
       
@@ -148,7 +154,7 @@ async function updateReviewInfo(word) {
  * 导出为CSV格式
  */
 function exportToCSV(vocabulary) {
-  const headers = ['单词', '美式音标', '英式音标', '中文释义', '英文定义', '例句', '标签', '添加时间', '复习次数'];
+  const headers = ['单词', '美式音标', '英式音标', '中文释义', '英文定义', '例句', '标签', '添加时间', '复习次数', '上下文句子', '来源网址'];
   
   const rows = vocabulary.map(w => [
     w.word,
@@ -159,7 +165,9 @@ function exportToCSV(vocabulary) {
     (w.examples || []).slice(0, 2).map(e => e.sentence).join(' | '),
     (w.tags || []).join(', '),
     new Date(w.addedAt).toLocaleString('zh-CN'),
-    w.reviewCount || 0
+    w.reviewCount || 0,
+    w.contextSentence || '',
+    w.sourceUrl || ''
   ]);
   
   const csvContent = [

@@ -86,16 +86,31 @@ function highlightExampleSentence(sentence, queryWord) {
   let result = sentence;
   const highlights = [];
   
-  // 1. 收集查询单词的所有匹配位置
-  const wordPattern = new RegExp(`\\b(${queryWord})\\b`, 'gi');
+  // 1. 收集所有英文单词及其位置
+  const allWordsPattern = /\b[a-zA-Z]+\b/g;
   let match;
-  while ((match = wordPattern.exec(sentence)) !== null) {
-    highlights.push({
-      text: match[0],
-      index: match.index,
-      length: match[0].length,
-      type: 'query' // 查询单词
-    });
+  while ((match = allWordsPattern.exec(sentence)) !== null) {
+    const word = match[0];
+    const wordLower = word.toLowerCase();
+    const queryLower = queryWord.toLowerCase();
+    
+    // 确定单词类型
+    let type = 'normal';
+    
+    if (wordLower === queryLower) {
+      type = 'query'; // 查询单词
+    } else if (savedWordsCache.has(wordLower)) {
+      type = 'saved'; // 已收藏的单词
+    }
+    
+    if (type !== 'normal') {
+      highlights.push({
+        text: word,
+        index: match[0].index !== undefined ? match[0].index : match.index,
+        length: word.length,
+        type: type
+      });
+    }
   }
   
   // 2. 收集搭配词的匹配位置
@@ -130,13 +145,12 @@ function highlightExampleSentence(sentence, queryWord) {
     }
   });
   
-  // 3. 排序并去重，优先保留搭配（因为搭配通常包含查询单词）
+  // 3. 排序并去重，优先级：搭配 > 查询单词 > 已收藏单词
   highlights.sort((a, b) => {
     if (a.index !== b.index) return a.index - b.index;
-    // 如果位置相同，优先保留搭配
-    if (a.type === 'collocation') return -1;
-    if (b.type === 'collocation') return 1;
-    return 0;
+    // 如果位置相同，按优先级排序
+    const priority = { collocation: 1, query: 2, saved: 3 };
+    return priority[a.type] - priority[b.type];
   });
   
   const uniqueHighlights = [];
@@ -156,13 +170,74 @@ function highlightExampleSentence(sentence, queryWord) {
     let highlighted;
     
     if (highlight.type === 'collocation') {
-      // 搭配词：紫色
+      // 搭配词：蓝色
       highlighted = `<span class="collocation">${highlight.text}</span>`;
-    } else {
+    } else if (highlight.type === 'query') {
       // 查询单词：蓝色加粗
       highlighted = `<span style="color: #2563eb; font-weight: 600;">${highlight.text}</span>`;
+    } else if (highlight.type === 'saved') {
+      // 已收藏单词：紫色加粗
+      highlighted = `<span style="color: #8b5cf6; font-weight: 600;">${highlight.text}</span>`;
     }
     
+    const after = result.substring(highlight.index + highlight.length);
+    result = before + highlighted + after;
+  }
+  
+  return result;
+}
+
+// 高亮文本中所有已收藏的单词（用紫色标记）
+function highlightSavedWordsInText(text) {
+  if (!text || savedWordsCache.size === 0) return text;
+  
+  // 首先清理文本：处理可能存在的转义字符和多余空白
+  // 这对于已经存储的脏数据特别重要
+  let cleanText = text
+    .replace(/\\n/g, ' ')  // 转义的换行符 \n
+    .replace(/\\t/g, ' ')  // 转义的制表符 \t
+    .replace(/\\r/g, ' ')  // 转义的回车符 \r
+    .replace(/\s+/g, ' ')  // 多个空白字符合并为一个空格
+    .trim();
+  
+  // 如果文本中已经包含HTML标签（可能已经被处理过），直接返回清理后的文本
+  if (/<\/?[a-z][\s\S]*>/i.test(cleanText)) {
+    return cleanText;
+  }
+  
+  // 额外检查：如果文本包含 HTML 实体，解码它们
+  if (/&[a-z]+;|&#\d+;/i.test(cleanText)) {
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = cleanText;
+    cleanText = textarea.value;
+  }
+  
+  let result = cleanText;
+  const highlights = [];
+  
+  // 查找所有英文单词
+  const wordPattern = /\b[a-zA-Z]+\b/g;
+  let match;
+  
+  while ((match = wordPattern.exec(cleanText)) !== null) {
+    const word = match[0];
+    const wordLower = word.toLowerCase();
+    
+    // 如果是已收藏的单词，记录位置
+    if (savedWordsCache.has(wordLower)) {
+      highlights.push({
+        text: word,
+        index: match.index,
+        length: word.length
+      });
+    }
+  }
+  
+  // 从后往前替换，避免位置错乱
+  for (let i = highlights.length - 1; i >= 0; i--) {
+    const highlight = highlights[i];
+    const before = result.substring(0, highlight.index);
+    const highlighted = `<span style="color: #8b5cf6; font-weight: 600;">${highlight.text}</span>`;
     const after = result.substring(highlight.index + highlight.length);
     result = before + highlighted + after;
   }
@@ -297,8 +372,8 @@ function initializeShadowDOM() {
       border: none;
       font-size: 18px;
       cursor: pointer;
-      padding: 4px 8px;
-      margin-left: 8px;
+      padding: 4px 6px;
+      margin-left: 2px;
       opacity: 0.6;
       transition: all 0.2s;
       border-radius: 4px;
@@ -319,8 +394,8 @@ function initializeShadowDOM() {
       border: none;
       font-size: 22px;
       cursor: pointer;
-      padding: 4px 8px;
-      margin-left: 8px;
+      padding: 4px 6px;
+      margin-left: 0;
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       border-radius: 6px;
       line-height: 1;
@@ -350,25 +425,95 @@ function initializeShadowDOM() {
       100% { transform: scale(1) rotate(0deg); }
     }
     
+    @keyframes checkPulse {
+      0% { transform: scale(1); }
+      30% { transform: scale(1.2); }
+      60% { transform: scale(0.9); }
+      100% { transform: scale(1); }
+    }
+    
+    #review-checkbox {
+      transition: all 0.2s ease;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #64748b;
+      border-radius: 3px;
+      cursor: pointer;
+      accent-color: #10b981;
+      padding: 2px;
+      background: transparent;
+    }
+    
+    #review-checkbox:hover {
+      transform: scale(1.1);
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.1);
+      box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1);
+    }
+    
+    #review-checkbox:checked {
+      border-color: #10b981;
+    }
+    
+    #review-checkbox.animate {
+      animation: checkPulse 0.4s ease-out;
+    }
+    
     .word-header {
       background: rgba(248, 250, 252, 0.5);
       padding: 12px 16px;
       border-radius: 12px;
       margin-bottom: 6px;
-      cursor: move;
-      user-select: none;
     }
     
-    .word-header:active {
+    .popup-drag-handle {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      pointer-events: none;
+    }
+    
+    .popup-drag-handle::before {
+      content: '☰';
+      position: absolute;
+      top: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 18px;
+      color: #94a3b8;
+      opacity: 0.4;
+      transition: opacity 0.2s;
+      cursor: grab;
+      pointer-events: auto;
+      z-index: 10;
+      line-height: 1;
+    }
+    
+    .popup-layer:hover .popup-drag-handle::before {
+      opacity: 0.7;
+    }
+    
+    .popup-drag-handle::before:hover {
+      opacity: 1;
+      cursor: grab;
+    }
+    
+    .popup-drag-handle.dragging::before {
       cursor: grabbing;
-      background: rgba(248, 250, 252, 0.8);
+    }
+    
+    .popup-drag-handle.dragging::before {
+      cursor: grabbing;
+      opacity: 1;
     }
     
     .word-title-row {
       display: flex;
       align-items: center;
       gap: 8px;
-      flex-wrap: nowrap;
+      flex-wrap: wrap;
     }
     
     .word-title {
@@ -564,6 +709,20 @@ function initializeShadowDOM() {
       cursor: text;
       user-select: text;
       flex: 1;
+      max-height: 3.9em; /* 限制最多3行 */
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      line-height: 1.3;
+      word-break: break-word;
+    }
+    
+    .saved-context-sentence {
+      max-height: none !important;
+      -webkit-line-clamp: unset !important;
+      display: block !important;
     }
     
     .example-source {
@@ -574,7 +733,7 @@ function initializeShadowDOM() {
     }
     
     .collocation {
-      color: #8b5cf6;
+      color: #2563eb;
       font-weight: 600;
     }
     
@@ -655,24 +814,108 @@ function getSelectionContext() {
   // Get the sentence containing the selection
   const range = selection.getRangeAt(0);
   const container = range.commonAncestorContainer;
-  const textNode = container.nodeType === Node.TEXT_NODE ? container : container.firstChild;
   
   let contextSentence = selectedText;
   
-  if (textNode) {
-    const fullText = textNode.textContent || '';
-    const sentenceMatch = fullText.match(/[^.!?]*[.!?]/g);
-    
-    if (sentenceMatch) {
-      for (const sentence of sentenceMatch) {
-        if (sentence.includes(selectedText)) {
-          contextSentence = sentence.trim();
+  // 尝试获取父元素的完整文本内容
+  let parentElement = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
+  
+  // 跳过我们自己添加的高亮标签
+  if (parentElement && parentElement.classList && parentElement.classList.contains('vocab-highlighted')) {
+    parentElement = parentElement.parentElement;
+  }
+  
+  // 首先尝试找到直接包含选中文本的最小元素
+  // 优先选择文本内容相对较少的元素（避免包含不相关的兄弟元素）
+  let targetElement = parentElement;
+  let minTextLength = Infinity;
+  let bestElement = null;
+  
+  // 向上遍历，找到文本长度最合适的元素
+  const acceptableTags = ['P', 'LI', 'TD', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'SPAN', 'A', 'DIV'];
+  let current = parentElement;
+  let maxLevels = 5; // 最多向上查找5层
+  
+  while (current && maxLevels > 0) {
+    if (acceptableTags.includes(current.tagName)) {
+      const text = current.textContent.replace(/\s+/g, ' ').trim();
+      // 如果文本包含选中的词，且长度合理（不要太短也不要太长）
+      if (text.includes(selectedText) && text.length >= selectedText.length && text.length < minTextLength) {
+        minTextLength = text.length;
+        bestElement = current;
+        
+        // 如果找到长度小于200的合适元素，就用这个
+        if (text.length <= 200) {
           break;
         }
       }
-    } else {
-      contextSentence = fullText.trim().substring(0, 200);
     }
+    current = current.parentElement;
+    maxLevels--;
+  }
+  
+  // 使用找到的最佳元素，如果没找到就用原来的
+  targetElement = bestElement || parentElement;
+  
+  if (targetElement) {
+    // 使用 textContent 获取纯文本，这会自动去除所有HTML标签
+    let fullText = targetElement.textContent || '';
+    // 清理文本：将多个空白字符（包括换行符、制表符等）合并为单个空格
+    fullText = fullText.replace(/\s+/g, ' ').trim();
+    
+    // 检查提取的文本是否以选中的词开头，但文本长度远大于选中词长度
+    // 这通常意味着包含了额外的标签或分类信息
+    const startsWithSelected = fullText.toLowerCase().startsWith(selectedText.toLowerCase());
+    const hasExtraContent = fullText.length > selectedText.length * 3; // 如果长度超过选中词的3倍
+    
+    if (startsWithSelected && hasExtraContent) {
+      // 可能是 "Giants Team Up to Push..." 这种情况
+      // 尝试从选中词后面开始找到真正的句子
+      const afterSelected = fullText.substring(selectedText.length).trim();
+      
+      // 如果后面的内容看起来是一个完整的句子或标题，使用它
+      if (afterSelected.length > 10) {
+        contextSentence = afterSelected;
+      } else {
+        contextSentence = fullText;
+      }
+    } else if (fullText.length > 300) {
+      // 如果提取的文本太长（超过300字符），可能包含了不相关的内容
+      // 这种情况下只取选中词周围的内容
+      const selectedIndex = fullText.indexOf(selectedText);
+      if (selectedIndex >= 0) {
+        // 获取前后各100个字符
+        const start = Math.max(0, selectedIndex - 100);
+        const end = Math.min(fullText.length, selectedIndex + selectedText.length + 100);
+        contextSentence = fullText.substring(start, end).trim();
+        
+        // 如果截断了，添加省略号
+        if (start > 0) contextSentence = '...' + contextSentence;
+        if (end < fullText.length) contextSentence = contextSentence + '...';
+      } else {
+        contextSentence = fullText;
+      }
+    } else {
+      // 文本长度合理，尝试提取完整句子
+      const sentenceRegex = /[^.!?。！？\n]+[.!?。！？\n]+/g;
+      const sentences = fullText.match(sentenceRegex);
+      
+      if (sentences) {
+        // 查找包含选中文本的句子
+        for (const sentence of sentences) {
+          if (sentence.includes(selectedText)) {
+            contextSentence = sentence.trim();
+            break;
+          }
+        }
+      } else {
+        // 没有明确的句子分隔符，直接使用全文
+        contextSentence = fullText;
+      }
+    }
+    
+    // 最后再次清理上下文句子，确保没有多余的空白字符
+    contextSentence = contextSentence.replace(/\s+/g, ' ').trim();
   }
   
   const rect = range.getBoundingClientRect();
@@ -823,7 +1066,7 @@ function renderPopupStack() {
     
     // Calculate positioning - popup appears below the selected word
     const scale = isTopLayer ? 1 : 0.94;
-    const compactLayerHeight = 80; // 增加间距从60到80
+    const compactLayerHeight = 45; // 紧凑间距，让窗口更接近
     
     // Get position from each word's coordinates
     const currentWord = wordStack[index];
@@ -836,9 +1079,38 @@ function renderPopupStack() {
       leftPosition = wordStack[0].x;
     }
     
-    // 计算弹窗的最大高度
+    // 计算弹窗的尺寸和视口信息
+    const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
+    const popupWidth = 680; // min-width
     const maxPopupHeight = isTopLayer ? viewportHeight - 40 : 70;
+    const margin = 10; // 距离边缘的最小距离
+    
+    // 水平位置调整：确保弹窗不超出屏幕左右边界
+    // 弹窗默认居中对齐（translateX(-50%)），所以需要考虑半宽
+    const halfWidth = popupWidth / 2;
+    
+    if (leftPosition - halfWidth < margin) {
+      // 左边界：弹窗左边缘与屏幕左边缘对齐
+      leftPosition = halfWidth + margin;
+    } else if (leftPosition + halfWidth > viewportWidth - margin) {
+      // 右边界：弹窗右边缘与屏幕右边缘对齐
+      leftPosition = viewportWidth - halfWidth - margin;
+    }
+    
+    // 垂直位置调整：确保弹窗不超出屏幕上下边界
+    // 预估弹窗高度（实际高度在渲染后才知道，这里用最大高度估算）
+    const estimatedHeight = Math.min(maxPopupHeight, 500); // 预估一个合理的高度
+    
+    if (topPosition + estimatedHeight > viewportHeight - margin) {
+      // 下边界：弹窗会超出底部，则显示在单词上方
+      topPosition = Math.max(margin, topPosition - estimatedHeight - 20); // 20是单词和弹窗的间距
+    }
+    
+    if (topPosition < margin) {
+      // 上边界：确保不超出顶部
+      topPosition = margin;
+    }
     
     layer.style.cssText = `
       position: fixed;
@@ -853,9 +1125,10 @@ function renderPopupStack() {
       border-radius: 12px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
       padding: ${isTopLayer ? '20px' : '14px 20px'};
-      min-width: 680px;
+      width: 680px;
       max-width: 90vw;
-      max-height: ${maxPopupHeight}px;
+      max-height: ${Math.min(maxPopupHeight, 600)}px;
+      overflow-y: auto;
       backdrop-filter: blur(${isTopLayer ? 0 : 10}px);
       pointer-events: auto;
       cursor: ${isTopLayer ? 'auto' : 'pointer'};
@@ -880,7 +1153,7 @@ function renderPopupStack() {
         layer.innerHTML = generateFullPopupHTML(wordInfo.data, wordInfo.savedWord);
       } else {
         // Old layers show compact view
-        layer.innerHTML = generateCompactPopupHTML(wordInfo.data);
+        layer.innerHTML = generateCompactPopupHTML(wordInfo.data, wordInfo.savedWord);
       }
     }
     
@@ -894,12 +1167,14 @@ function renderPopupStack() {
 }
 
 // Generate compact HTML for old layers
-function generateCompactPopupHTML(data) {
+function generateCompactPopupHTML(data, savedWord) {
   const { word, phoneticUs, phoneticUk, youdaoTags } = data;
+  const isSaved = !!savedWord;
   
   let html = `<div style="display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;">`;
   html += `<div class="word-title compact-word-text" style="font-size: 20px; cursor: pointer;" title="点击复制单词">${word}</div>`;
   html += `<button class="copy-btn compact-copy-btn" title="复制单词" style="font-size: 16px; padding: 2px 6px; margin-left: 4px;">📋</button>`;
+  html += `<button class="star-btn compact-star-btn ${isSaved ? 'saved' : ''}" data-word="${word}" title="${isSaved ? '已收藏' : '收藏到生词本'}" style="font-size: 18px; padding: 2px 6px;">⭐</button>`;
   
   // Phonetics with audio buttons
   if (phoneticUs) {
@@ -926,7 +1201,7 @@ function generateCompactPopupHTML(data) {
 // Generate full HTML for top layer
 function generateFullPopupHTML(data, savedWord) {
   const { word, phonetic, phoneticUs, phoneticUk, audioUs, audioUk, definition, allDefinitions,
-          partOfSpeech, synonyms, antonyms, examples, translation, baseForm, baseFormType, baseFormTranslation, youdaoTags } = data;
+          partOfSpeech, synonyms, antonyms, examples, translation, baseForm, baseFormType, baseFormTranslation, youdaoTags, wordForms } = data;
   
   // 格式化收藏日期
   const formatDate = (isoString) => {
@@ -949,6 +1224,15 @@ function generateFullPopupHTML(data, savedWord) {
         <div class="word-title" id="word-text" style="cursor: pointer;" title="点击复制单词">${word}</div>
         <button class="copy-btn" id="copy-word-btn" title="复制单词">📋</button>
         <button class="star-btn" id="star-btn" title="收藏到生词本">⭐</button>`;
+  
+  // 复习状态（放在收藏按钮旁边）
+  if (savedWord) {
+    const isReviewed = savedWord.reviewCount > 0;
+    html += `
+      <input type="checkbox" id="review-checkbox" ${isReviewed ? 'checked' : ''} 
+        title="${isReviewed ? '已复习，点击取消' : '点击标记为已复习'}"
+        style="width: 16px; height: 16px; cursor: pointer; accent-color: #10b981; margin-left: 6px; margin-right: 8px;">`;
+  }
   
   // Phonetics with flag icons - Vocabulary.com style
   if (phoneticUs || phoneticUk) {
@@ -984,51 +1268,69 @@ function generateFullPopupHTML(data, savedWord) {
     allDefinitions.forEach((defItem, index) => {
       const number = allDefinitions.length > 1 ? `${index + 1}. ` : '';
       const def = typeof defItem === 'string' ? defItem : defItem.definition;
+      const highlightedDef = highlightSavedWordsInText(def);
       const syns = typeof defItem === 'object' && defItem.synonyms && defItem.synonyms.length > 0 
-        ? ` <span style="color: #8b5cf6; font-style: italic; font-size: 14px;">(syn: ${defItem.synonyms.join(', ')})</span>` 
+        ? ` <span style="color: #2563eb; font-style: italic; font-size: 14px;">(syn: ${highlightSavedWordsInText(defItem.synonyms.join(', '))})</span>` 
         : '';
-      html += `<div style="margin-bottom: ${index < allDefinitions.length - 1 ? '4px' : '0'}; font-size: 14px;">${number}${def}${syns}</div>`;
+      html += `<div style="margin-bottom: ${index < allDefinitions.length - 1 ? '4px' : '0'}; font-size: 14px;">${number}${highlightedDef}${syns}</div>`;
     });
     html += `</div>`;
   } else if (definition) {
-    html += `<div class="definition" style="margin-top: 6px; font-size: 14px;">${definition}</div>`;
+    html += `<div class="definition" style="margin-top: 6px; font-size: 14px;">${highlightSavedWordsInText(definition)}</div>`;
+  }
+  
+  // Synonyms and Antonyms - directly below definition in word-header
+  if ((synonyms && synonyms.length > 0) || (antonyms && antonyms.length > 0)) {
+    html += `<div style="margin-top: 8px; font-size: 13px; color: #64748b;">`;
+    
+    if (synonyms && synonyms.length > 0) {
+      html += `<span style="font-weight: 500;">近义:</span> ${synonyms.map(syn => `<span class="word-tag synonym" style="display: inline-block; margin: 0 2px;">${highlightSavedWordsInText(syn)}</span>`).join('')}`;
+    }
+    
+    if (antonyms && antonyms.length > 0) {
+      if (synonyms && synonyms.length > 0) html += ` <span style="margin: 0 4px;">|</span> `;
+      html += `<span style="font-weight: 500;">反义:</span> ${antonyms.map(ant => `<span class="word-tag antonym" style="display: inline-block; margin: 0 2px;">${highlightSavedWordsInText(ant)}</span>`).join('')}`;
+    }
+    
+    html += `</div>`;
   }
   
   html += `</div>`; // Close word-header
   
-  // Synonyms and Antonyms in one block
-  if ((synonyms && synonyms.length > 0) || (antonyms && antonyms.length > 0)) {
-    html += `<div class="section" style="display: flex; gap: 12px; flex-wrap: wrap; padding: 6px 12px;">`;
-    
-    // Synonyms
-    if (synonyms && synonyms.length > 0) {
-      html += `
-        <div class="synonym-section" style="flex: 1; min-width: 200px;">
-          <span class="section-label label-synonym">近义词</span>
-          <div class="word-tags-list">
-            ${synonyms.map(syn => `<span class="word-tag synonym">${syn}</span>`).join('')}
-          </div>
+  // 收藏时的句子（放在近义词下面，例句上面）
+  if (savedWord && savedWord.contextSentence) {
+    // 清理可能存在的转义字符
+    const cleanSentence = savedWord.contextSentence
+      .replace(/\\n/g, ' ')
+      .replace(/\\t/g, ' ')
+      .replace(/\\r/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const hasSourceUrl = savedWord.sourceUrl && savedWord.sourceUrl !== '';
+    html += `
+      <div class="section" style="padding: 8px 12px; margin-bottom: 4px;">
+        <div class="example">
+          <div class="example-text saved-context-sentence">${highlightSavedWordsInText(cleanSentence)}</div>
+          ${hasSourceUrl ? `
+            <a href="${savedWord.sourceUrl}" target="_blank" 
+               class="example-source"
+               style="text-decoration: none; color: #94a3b8; cursor: pointer;"
+               onmouseover="this.style.color='#3b82f6'" 
+               onmouseout="this.style.color='#94a3b8'"
+               title="点击查看来源网页">
+              — 收藏时间: ${formatDate(savedWord.addedAt)}
+            </a>
+          ` : `
+            <div class="example-source">— 收藏时间: ${formatDate(savedWord.addedAt)}</div>
+          `}
         </div>
-      `;
-    }
-    
-    // Antonyms
-    if (antonyms && antonyms.length > 0) {
-      html += `
-        <div class="antonym-section" style="flex: 1; min-width: 200px;">
-          <span class="section-label label-antonym">反义词</span>
-          <div class="word-tags-list">
-            ${antonyms.map(ant => `<span class="word-tag antonym">${ant}</span>`).join('')}
-          </div>
-        </div>
-      `;
-    }
-    
-    html += `</div>`;
+      </div>
+    `;
   }
   
   // Examples with query word and collocation highlighting
   if (examples && examples.length > 0) {
+    html += `<div class="section" style="padding: 8px 12px; margin-bottom: 4px;">`;
     html += examples.map(ex => {
       const highlightedSentence = highlightExampleSentence(ex.sentence, word);
       return `
@@ -1038,6 +1340,7 @@ function generateFullPopupHTML(data, savedWord) {
         </div>
       `;
     }).join('');
+    html += `</div>`;
   }
   
   // Chinese Translation (collapsible)
@@ -1057,7 +1360,9 @@ function generateFullPopupHTML(data, savedWord) {
   
   // Base Form (Word Origin) - collapsible
   if (baseForm) {
-    const typeLabel = baseFormType === 'verb' ? '动词' : baseFormType === 'adjective' ? '形容词' : baseFormType === 'noun' ? '名词' : '';
+    // 检查baseFormTranslation是否已包含词性标记
+    const hasPos = baseFormTranslation && /^[a-z]+[\.。．]/.test(baseFormTranslation);
+    const typeLabel = !hasPos && baseFormType ? (baseFormType === 'verb' ? 'v.' : baseFormType === 'adjective' ? 'adj.' : baseFormType === 'noun' ? 'n.' : '') : '';
     html += `
       <div class="section" style="padding: 8px 12px; margin-bottom: 4px;">
         <div style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;" id="baseform-toggle">
@@ -1065,45 +1370,68 @@ function generateFullPopupHTML(data, savedWord) {
           <span style="color: #8b5cf6; font-size: 12px;" id="baseform-icon">▼</span>
         </div>
         <div id="baseform-content" style="color: #475569; font-size: 13px; line-height: 1.4; margin-top: 6px; display: none;">
-          <span style="cursor: pointer;">${baseForm}</span>${typeLabel ? ` (${typeLabel})` : ''}${baseFormTranslation ? ` — ${baseFormTranslation}` : ''}
-        </div>
-      </div>
-    `;
-  }
-  
-  // 收藏信息和复习状态
-  if (savedWord) {
-    const isReviewed = savedWord.reviewCount > 0;
-    html += `
-      <div class="section" style="padding: 12px; background: #f8fafc; border-radius: 8px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-          <div style="font-size: 12px; color: #64748b;">
-            📅 收藏时间: <span style="color: #0f172a; font-weight: 500;">${formatDate(savedWord.addedAt)}</span>
+          <div style="margin-bottom: 8px;">
+            <span style="font-weight: 600;">${word}</span> → <span style="cursor: pointer; color: #2563eb;">${baseForm}</span>${typeLabel ? ` ${typeLabel}` : ''}${baseFormTranslation ? ` ${baseFormTranslation}` : ''}
           </div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: #475569;">
-            <input type="checkbox" id="review-checkbox" ${isReviewed ? 'checked' : ''} 
-              style="width: 16px; height: 16px; cursor: pointer; accent-color: #8b5cf6;">
-            <span style="font-weight: 500;">已复习</span>
-          </label>
-          ${savedWord.lastReviewed ? `
-            <span style="font-size: 12px; color: #94a3b8;">
-              (最后复习: ${formatDate(savedWord.lastReviewed)})
-            </span>
+          ${wordForms && wordForms.length > 0 ? `
+          <div style="overflow-x: auto; margin-top: 8px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+              <thead>
+                <tr style="background-color: #f3f4f6;">
+                  <th style="padding: 6px 8px; text-align: left; border: 1px solid #e5e7eb; font-weight: 600; width: 100px;">Original Word</th>
+                  <th style="padding: 6px 8px; text-align: left; border: 1px solid #e5e7eb; font-weight: 600; width: 90px;">Form Type</th>
+                  <th style="padding: 6px 8px; text-align: left; border: 1px solid #e5e7eb; font-weight: 600;">Example Sentence</th>
+                  <th style="padding: 6px 8px; text-align: left; border: 1px solid #e5e7eb; font-weight: 600; width: 150px;">Chinese Meaning</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${wordForms.map(form => {
+                  const exampleForForm = (examples || []).find(ex => 
+                    ex.sentence.toLowerCase().includes(form.value.toLowerCase())
+                  );
+                  let exampleHtml = '—';
+                  let shortMeaning = '—';
+                  
+                  if (exampleForForm) {
+                    const regex = new RegExp(`\\b(${form.value})\\b`, 'gi');
+                    exampleHtml = exampleForForm.sentence.replace(regex, 
+                      `<span style="color: #2563eb; font-weight: 600;">$1</span>`
+                    );
+                    
+                    // 只有存在例句时才提取中文释义
+                    let meaning = baseFormTranslation || '';
+                    if (meaning) {
+                      // 移除词性标记 (n., v., adj. 等)
+                      meaning = meaning.replace(/^[a-z]+[\.\u3002\uff0e]\s*/i, '');
+                      // 只取第一个含义(分号、冒号或；之前)
+                      const match = meaning.match(/^[^；：;，,]+/);
+                      if (match) {
+                        shortMeaning = match[0].trim();
+                        // 限制长度
+                        if (shortMeaning.length > 30) {
+                          shortMeaning = shortMeaning.substring(0, 30) + '...';
+                        }
+                      }
+                    }
+                  }
+                  
+                  return `
+                <tr>
+                  <td style="padding: 6px 8px; border: 1px solid #e5e7eb; font-weight: 500;">${form.value}</td>
+                  <td style="padding: 6px 8px; border: 1px solid #e5e7eb; color: #64748b;">${form.name}</td>
+                  <td style="padding: 6px 8px; border: 1px solid #e5e7eb; font-size: 11px; line-height: 1.4;">${exampleHtml}</td>
+                  <td style="padding: 6px 8px; border: 1px solid #e5e7eb; color: #475569; font-size: 11px;">${shortMeaning}</td>
+                </tr>
+                `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
           ` : ''}
         </div>
       </div>
     `;
   }
-  
-  // Actions
-  html += `
-    <div class="actions">
-      <button class="btn btn-primary" id="save-word">💾 Save</button>
-      <button class="btn btn-secondary" id="close-popup-btn">Close</button>
-    </div>
-  `;
   
   return html;
 }
@@ -1119,37 +1447,38 @@ function setupEventListeners(layerIndex) {
   
   const cleanWord = wordInfo.word.toLowerCase().replace(/[^a-z]/g, '');
   
-  // 拖动功能
-  const wordHeader = layer.querySelector('.word-header');
-  if (wordHeader && layerIndex === wordStack.length - 1) {
+  // 边缘拖动功能
+  if (layerIndex === wordStack.length - 1) {
+    const dragHandle = document.createElement('div');
+    dragHandle.className = 'popup-drag-handle';
+    layer.appendChild(dragHandle);
+    
     let isDragging = false;
     let startX, startY, initialLeft, initialTop;
     let animationFrameId = null;
     
-    wordHeader.addEventListener('mousedown', (e) => {
-      // 只忽略按钮点击,允许在其他任何地方拖动
-      if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
-        return;
-      }
+    dragHandle.addEventListener('mousedown', (e) => {
+      // 只在手掌图标上触发
+      if (e.target !== dragHandle) return;
       
       isDragging = true;
       startX = e.clientX;
       startY = e.clientY;
       
       const rect = layer.getBoundingClientRect();
-      initialLeft = rect.left + rect.width / 2; // transform translateX(-50%)
+      initialLeft = rect.left + rect.width / 2;
       initialTop = rect.top;
       
-      // 禁用过渡动画以提升拖动流畅度
+      dragHandle.classList.add('dragging');
       layer.style.transition = 'none';
       
       e.preventDefault();
+      e.stopPropagation();
     });
     
     const onMouseMove = (e) => {
       if (!isDragging) return;
       
-      // 使用requestAnimationFrame优化性能
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
       }
@@ -1161,7 +1490,6 @@ function setupEventListeners(layerIndex) {
         const newLeft = initialLeft + deltaX;
         const newTop = initialTop + deltaY;
         
-        // 更新弹窗位置
         layer.style.left = newLeft + 'px';
         layer.style.top = newTop + 'px';
       });
@@ -1170,7 +1498,7 @@ function setupEventListeners(layerIndex) {
     const onMouseUp = () => {
       if (isDragging) {
         isDragging = false;
-        // 恢复过渡动画
+        dragHandle.classList.remove('dragging');
         layer.style.transition = '';
         if (animationFrameId) {
           cancelAnimationFrame(animationFrameId);
@@ -1182,7 +1510,6 @@ function setupEventListeners(layerIndex) {
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
     
-    // 清理事件监听器
     layer.addEventListener('DOMNodeRemoved', () => {
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
@@ -1192,19 +1519,9 @@ function setupEventListeners(layerIndex) {
     });
   }
   
-  // Close button
+  // Close button (只保留右上角的 X 按钮)
   const closeBtn = layer.querySelector('#close-popup');
-  const closeBtnAlt = layer.querySelector('#close-popup-btn');
   if (closeBtn) closeBtn.addEventListener('click', hidePopup);
-  if (closeBtnAlt) closeBtnAlt.addEventListener('click', hidePopup);
-  
-  // Save button
-  const saveBtn = layer.querySelector('#save-word');
-  if (saveBtn) {
-    saveBtn.addEventListener('click', () => {
-      saveWord({ ...wordInfo.data, context: wordInfo.sentence || '' });
-    });
-  }
   
   // Copy word button and word text click
   const copyBtn = layer.querySelector('#copy-word-btn');
@@ -1287,6 +1604,10 @@ function setupEventListeners(layerIndex) {
             showToast('取消收藏失败');
           }
         } else {
+          // 调试：打印句子信息
+          console.log('保存单词时的句子:', wordInfo.sentence);
+          console.log('完整wordInfo:', wordInfo);
+          
           const wordData = {
             word: wordInfo.word,
             phonetic: wordInfo.data.phonetic,
@@ -1300,8 +1621,14 @@ function setupEventListeners(layerIndex) {
             synonyms: wordInfo.data.synonyms || [],
             baseForm: wordInfo.data.baseForm,
             baseFormTranslation: wordInfo.data.baseFormTranslation,
-            context: wordInfo.sentence || window.location.href
+            wordForms: wordInfo.data.wordForms || [],
+            context: wordInfo.sentence || window.location.href,
+            // 新增：保存上下文句子和来源URL
+            contextSentence: wordInfo.sentence || '',
+            sourceUrl: window.location.href
           };
+          
+          console.log('准备保存的wordData:', wordData);
           
           const result = await saveWord(wordData);
           if (result && result.success) {
@@ -1379,13 +1706,17 @@ function setupEventListeners(layerIndex) {
       }
       
       try {
+        // 添加动画效果
+        reviewCheckbox.classList.add('animate');
+        setTimeout(() => reviewCheckbox.classList.remove('animate'), 400);
+        
         if (isChecked) {
           await updateReviewInfo(wordInfo.word);
-          showToast('已标记为复习');
-          // 更新当前层的savedWord并重新渲染
+          showToast('已复习');
+          // 更新当前层的savedWord并重新渲染（延迟执行让Toast有时间显示）
           if (typeof getWord === 'function') {
             wordInfo.savedWord = await getWord(wordInfo.word);
-            renderPopupStack();
+            setTimeout(() => renderPopupStack(), 800);
           }
         } else {
           // 重置reviewCount
@@ -1401,11 +1732,11 @@ function setupEventListeners(layerIndex) {
             await new Promise((resolve) => {
               STORAGE.set({ [VOCABULARY_KEY]: vocabulary }, resolve);
             });
-            showToast('已取消复习标记');
-            // 更新当前层的savedWord并重新渲染
+            showToast('已取消');
+            // 更新当前层的savedWord并重新渲染（延迟执行让Toast有时间显示）
             if (typeof getWord === 'function') {
               wordInfo.savedWord = await getWord(wordInfo.word);
-              renderPopupStack();
+              setTimeout(() => renderPopupStack(), 800);
             }
           }
         }
@@ -1499,6 +1830,41 @@ function setupEventListeners(layerIndex) {
     });
   }
   
+  // Star button in compact view
+  const compactStarBtn = layer.querySelector('.compact-star-btn');
+  if (compactStarBtn) {
+    compactStarBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const word = wordInfo.word;
+      const isSaved = compactStarBtn.classList.contains('saved');
+      
+      if (isSaved) {
+        // 已收藏，取消收藏
+        if (typeof removeWord === 'function') {
+          await removeWord(word);
+          compactStarBtn.classList.remove('saved');
+          compactStarBtn.title = '收藏到生词本';
+          wordInfo.savedWord = null;
+          showToast('已取消收藏');
+        }
+      } else {
+        // 未收藏，添加收藏
+        if (typeof saveWord === 'function') {
+          // 获取上下文（如果有）
+          const context = wordInfo.context || {};
+          await saveWord(word, context.sentence || '', context.url || '');
+          const saved = typeof getWord === 'function' ? await getWord(word) : { word };
+          compactStarBtn.classList.add('saved');
+          compactStarBtn.title = '已收藏';
+          wordInfo.savedWord = saved;
+          showToast('已收藏');
+        }
+      }
+    });
+  }
+  
   // Clickable word tags (synonyms/antonyms) - support nested lookup
   const wordTags = layer.querySelectorAll('.word-tag');
   wordTags.forEach(tag => {
@@ -1543,13 +1909,25 @@ async function lookupWord(word, context) {
   try {
     // Check if extension context is valid
     if (!chrome.runtime?.id) {
-      console.error('Extension context invalid');
+      console.warn('Extension context invalid - page needs refresh');
+      // 显示友好的错误提示
+      wordStack.push({
+        word: word,
+        sentence: context.sentence || '',
+        x: context.x,
+        y: context.y,
+        loading: false,
+        data: null,
+        error: '扩展已更新，请刷新页面后重试'
+      });
+      renderPopupStack();
       return;
     }
     
     // Add new word to stack
     wordStack.push({
       word: word,
+      sentence: context.sentence || '',
       x: context.x,
       y: context.y,
       loading: true,
@@ -1720,6 +2098,322 @@ function checkExtensionValidity() {
   return true;
 }
 
+// ===== Highlight Saved Words =====
+let savedWordsCache = new Set();
+let highlightEnabled = true;
+
+// 获取所有已收藏的单词
+async function loadSavedWords() {
+  try {
+    const VOCABULARY_KEY = 'vocabulary';
+    const result = await chrome.storage.local.get(VOCABULARY_KEY);
+    const vocabulary = result[VOCABULARY_KEY] || [];
+    // 过滤掉无效的词汇项（没有 word 属性的）
+    savedWordsCache = new Set(
+      vocabulary
+        .filter(w => w && w.word)
+        .map(w => w.word.toLowerCase())
+    );
+    console.log('Loaded saved words:', savedWordsCache.size);
+    return savedWordsCache;
+  } catch (error) {
+    console.error('Failed to load saved words:', error);
+    return new Set();
+  }
+}
+
+// 高亮页面中的已收藏单词
+function highlightSavedWordsInPage() {
+  console.log('highlightSavedWordsInPage called, cache size:', savedWordsCache.size, 'enabled:', highlightEnabled);
+  if (!highlightEnabled || savedWordsCache.size === 0) {
+    console.log('Skipping highlight: enabled=', highlightEnabled, 'cacheSize=', savedWordsCache.size);
+    return;
+  }
+  
+  // 获取页面中的所有文本节点
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode: function(node) {
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        
+        // 跳过脚本、样式和已处理的节点
+        if (parent.tagName === 'SCRIPT' || 
+            parent.tagName === 'STYLE' ||
+            parent.closest('#linguacontext-shadow-host') ||
+            parent.classList.contains('vocab-highlighted')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        
+        // 跳过可能包含复杂结构的小元素（如标签、徽章等）
+        // 这些元素通常文本很短且可能是独立的标签
+        const text = node.textContent.trim();
+        if (text.length > 0 && text.length < 30) {
+          // 检查父元素是否有典型的标签/徽章类名
+          const className = parent.className || '';
+          const tagPatterns = /tag|badge|label|category|chip|pill/i;
+          if (tagPatterns.test(className)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          
+          // 如果文本只有一个单词，且父元素是 SPAN 或类似的小元素
+          const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
+          if (wordCount === 1 && ['SPAN', 'A', 'LABEL'].includes(parent.tagName)) {
+            // 检查父元素的兄弟节点，如果兄弟节点也包含文本且更长，可能是标签
+            const siblings = Array.from(parent.parentElement?.children || []);
+            const hasLongerSibling = siblings.some(s => 
+              s !== parent && s.textContent.trim().length > text.length
+            );
+            if (hasLongerSibling) {
+              return NodeFilter.FILTER_REJECT;
+            }
+          }
+        }
+        
+        // 只处理包含字母的文本
+        if (/[a-zA-Z]/.test(node.textContent)) {
+          return NodeFilter.FILTER_ACCEPT;
+        }
+        return NodeFilter.FILTER_REJECT;
+      }
+    }
+  );
+  
+  const nodesToProcess = [];
+  let node;
+  while (node = walker.nextNode()) {
+    nodesToProcess.push(node);
+  }
+  
+  // 处理每个文本节点
+  nodesToProcess.forEach(textNode => {
+    const text = textNode.textContent;
+    const words = text.match(/\b[a-zA-Z]+\b/g);
+    
+    if (!words) return;
+    
+    // 检查是否有已收藏的单词
+    const hasHighlightableWords = words.some(word => 
+      savedWordsCache.has(word.toLowerCase())
+    );
+    
+    if (!hasHighlightableWords) return;
+    
+    // 安全检查：确保父元素仍然存在且文本节点未被修改
+    if (!textNode.parentNode || textNode.textContent !== text) {
+      return;
+    }
+    
+    // 检查父元素是否是安全的可替换元素
+    const parent = textNode.parentElement;
+    if (!parent) return;
+    
+    // 跳过某些可能会破坏布局的父元素
+    const unsafeTags = ['BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'OPTION'];
+    if (unsafeTags.includes(parent.tagName)) {
+      return;
+    }
+    
+    // 创建新的HTML片段，高亮已收藏的单词
+    const fragment = document.createDocumentFragment();
+    let lastIndex = 0;
+    const regex = /\b[a-zA-Z]+\b/g;
+    let match;
+    
+    while ((match = regex.exec(text)) !== null) {
+      const word = match[0];
+      const wordLower = word.toLowerCase();
+      
+      // 添加匹配前的文本
+      if (match.index > lastIndex) {
+        fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
+      }
+      
+      // 如果是已收藏的单词，用 span 包裹
+      if (savedWordsCache.has(wordLower)) {
+        const span = document.createElement('span');
+        span.className = 'vocab-highlighted';
+        span.textContent = word;
+        // 只添加背景色和下划线，其他样式全部继承父元素
+        span.style.cssText = `
+          background-color: rgba(139, 92, 246, 0.15) !important;
+          border-bottom: 2px solid rgba(139, 92, 246, 0.5) !important;
+          font-size: inherit !important;
+          font-weight: inherit !important;
+          font-family: inherit !important;
+          color: inherit !important;
+          line-height: inherit !important;
+          letter-spacing: inherit !important;
+          text-transform: inherit !important;
+          display: inline !important;
+        `;
+        span.title = '已收藏';
+        
+        fragment.appendChild(span);
+      } else {
+        fragment.appendChild(document.createTextNode(word));
+      }
+      
+      lastIndex = match.index + word.length;
+    }
+    
+    // 添加剩余文本
+    if (lastIndex < text.length) {
+      fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
+    }
+    
+    // 替换原文本节点
+    textNode.parentNode.replaceChild(fragment, textNode);
+  });
+}
+
+// 高亮特定单词（用于收藏后立即高亮）
+function highlightSpecificWord(word) {
+  const wordLower = word.toLowerCase();
+  
+  // 添加到缓存
+  savedWordsCache.add(wordLower);
+  
+  // 查找页面中所有该单词的文本节点
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode: function(node) {
+        if (node.parentElement.tagName === 'SCRIPT' || 
+            node.parentElement.tagName === 'STYLE' ||
+            node.parentElement.closest('#linguacontext-shadow-host') ||
+            node.parentElement.classList.contains('vocab-highlighted')) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        // 检查是否包含目标单词
+        const regex = new RegExp(`\\b${word}\\b`, 'i');
+        if (regex.test(node.textContent)) {
+          return NodeFilter.FILTER_ACCEPT;
+        }
+        return NodeFilter.FILTER_REJECT;
+      }
+    }
+  );
+  
+  const nodesToProcess = [];
+  let node;
+  while (node = walker.nextNode()) {
+    nodesToProcess.push(node);
+  }
+  
+  // 处理每个包含目标单词的文本节点
+  nodesToProcess.forEach(textNode => {
+    const text = textNode.textContent;
+    const fragment = document.createDocumentFragment();
+    let lastIndex = 0;
+    const regex = new RegExp(`\\b[a-zA-Z]+\\b`, 'g');
+    let match;
+    
+    while ((match = regex.exec(text)) !== null) {
+      const matchedWord = match[0];
+      const matchedWordLower = matchedWord.toLowerCase();
+      
+      // 添加匹配前的文本
+      if (match.index > lastIndex) {
+        fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
+      }
+      
+      // 如果是目标单词或其他已收藏的单词，用 span 包裹
+      if (savedWordsCache.has(matchedWordLower)) {
+        const span = document.createElement('span');
+        span.className = 'vocab-highlighted';
+        span.textContent = matchedWord;
+        span.style.cssText = `
+          background-color: rgba(139, 92, 246, 0.15);
+          border-bottom: 2px solid rgba(139, 92, 246, 0.5);
+          border-radius: 2px;
+          padding: 0 2px;
+          cursor: pointer;
+          transition: all 0.2s;
+        `;
+        span.title = '已收藏';
+        
+        // 悬停效果
+        span.addEventListener('mouseenter', function() {
+          this.style.backgroundColor = 'rgba(139, 92, 246, 0.25)';
+          this.style.borderBottomColor = 'rgb(139, 92, 246)';
+        });
+        span.addEventListener('mouseleave', function() {
+          this.style.backgroundColor = 'rgba(139, 92, 246, 0.15)';
+          this.style.borderBottomColor = 'rgba(139, 92, 246, 0.5)';
+        });
+        
+        fragment.appendChild(span);
+      } else {
+        fragment.appendChild(document.createTextNode(matchedWord));
+      }
+      
+      lastIndex = match.index + matchedWord.length;
+    }
+    
+    // 添加剩余文本
+    if (lastIndex < text.length) {
+      fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
+    }
+    
+    // 替换原文本节点
+    textNode.parentNode.replaceChild(fragment, textNode);
+  });
+  
+  console.log(`Highlighted word: ${word}`);
+}
+
+// 取消高亮特定单词（用于取消收藏后移除高亮）
+function removeHighlightForWord(word) {
+  const wordLower = word.toLowerCase();
+  
+  // 从缓存中移除
+  savedWordsCache.delete(wordLower);
+  
+  // 查找所有该单词的高亮元素
+  const highlightedElements = document.querySelectorAll('.vocab-highlighted');
+  highlightedElements.forEach(span => {
+    if (span.textContent.toLowerCase() === wordLower) {
+      // 用纯文本替换高亮的 span
+      const textNode = document.createTextNode(span.textContent);
+      span.parentNode.replaceChild(textNode, span);
+    }
+  });
+  
+  console.log(`Removed highlight for word: ${word}`);
+}
+
+// 监听存储变化，实时更新高亮
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local' && changes.vocabulary) {
+    const oldVocab = changes.vocabulary.oldValue || [];
+    const newVocab = changes.vocabulary.newValue || [];
+    
+    const oldWords = new Set(oldVocab.map(w => w.word.toLowerCase()));
+    const newWords = new Set(newVocab.map(w => w.word.toLowerCase()));
+    
+    // 找出新增的单词
+    const addedWords = [...newWords].filter(w => !oldWords.has(w));
+    // 找出删除的单词
+    const removedWords = [...oldWords].filter(w => !newWords.has(w));
+    
+    console.log('Vocabulary changed - Added:', addedWords, 'Removed:', removedWords);
+    
+    // 高亮新增的单词
+    addedWords.forEach(word => {
+      highlightSpecificWord(word);
+    });
+    
+    // 移除删除的单词的高亮
+    removedWords.forEach(word => {
+      removeHighlightForWord(word);
+    });
+  }
+});
+
 // Initialize
 if (checkExtensionValidity()) {
   initializeShadowDOM();
@@ -1737,6 +2431,28 @@ if (checkExtensionValidity()) {
     if (!e.target.closest('#linguacontext-shadow-host') && popupContainer && !popupContainer.classList.contains('hidden')) {
       hidePopup();
     }
+  });
+  
+  // 加载已收藏单词并高亮
+  loadSavedWords().then(() => {
+    // 页面加载完成后高亮
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', highlightSavedWordsInPage);
+    } else {
+      highlightSavedWordsInPage();
+    }
+    
+    // 监听动态内容变化（可选）
+    const observer = new MutationObserver((mutations) => {
+      // 节流：避免频繁高亮
+      clearTimeout(observer.highlightTimer);
+      observer.highlightTimer = setTimeout(highlightSavedWordsInPage, 500);
+    });
+    
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
   });
   
   console.log('4R Vocabulary Direct: Ready to lookup words!');

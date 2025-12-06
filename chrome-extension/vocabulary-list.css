@@ -726,12 +726,50 @@ body {
   margin-bottom: 6px;
 }
 
+.popup-drag-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.popup-drag-handle::before {
+  content: '☰';
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 18px;
+  color: #94a3b8;
+  opacity: 0.4;
+  transition: opacity 0.2s;
+  cursor: grab;
+  pointer-events: auto;
+  z-index: 10;
+  line-height: 1;
+}
+
+.popup-layer:hover .popup-drag-handle::before {
+  opacity: 0.7;
+}
+
+.popup-drag-handle::before:hover {
+  opacity: 1;
+  cursor: grab;
+}
+
+.popup-drag-handle.dragging::before {
+  cursor: grabbing;
+}
+
 .popup-layer .word-title-row,
 .popup-content .word-title-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 
 .popup-layer .word-title,
